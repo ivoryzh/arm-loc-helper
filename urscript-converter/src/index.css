@@ -27,9 +27,8 @@ body {
 
 #root {
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+  margin: 0;
+  padding: 0;
 }
 
 * {

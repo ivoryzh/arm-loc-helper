@@ -254,122 +254,24 @@ function App() {
         </div>
       </div>
 
-      {/* MIDDLE ROW: Split 3D Workspace & Config Table */}
-      <div className="main-split">
-        <section className="visualizer-section glass-panel">
-          <div className="section-header">
-            <h2><Box size={18} style={{marginRight: 8, verticalAlign: 'middle'}}/> 3D Workspace Preview</h2>
-          </div>
-          <div className="visualizer-container">
-            <CoordinateVisualizer 
-              locations={locations} 
-              gridConfigs={gridConfigs}
-              selectedLocation={selectedLocation}
-              onSelectLocation={handleSelectLocation}
-            />
-          </div>
-        </section>
-
-        <section className="config-section glass-panel" style={{padding: 0}}>
-          <div className="section-header" style={{padding: '16px 16px 0', marginBottom: '8px'}}>
-            <h2>Configuration Table</h2>
-          </div>
-          {locations.length > 0 ? (
-            <div className="table-container" style={{margin: '0 16px 16px', maxHeight: '600px'}}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Location Name</th>
-                    <th>Type</th>
-                    <th>Grid Config</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locations.map((loc) => {
-                    const conf = gridConfigs[loc.name];
-                    const isSelected = selectedLocation === loc.name;
-                    return (
-                      <tr 
-                        key={loc.name} 
-                        className={isSelected ? 'selected' : ''}
-                        ref={(el) => (rowRefs.current[loc.name] = el)}
-                        onClick={() => setSelectedLocation(loc.name)}
-                        style={{cursor: 'pointer'}}
-                      >
-                        <td>{loc.name}</td>
-                        <td>
-                          <span className={`type-badge ${loc.type === 'p' ? 'cartesian' : 'joint'}`}>
-                            {loc.type === 'p' ? 'Cartesian' : 'Joints'}
-                          </span>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          {loc.type === 'p' ? (
-                            <div className="grid-config-cell">
-                              <label className="grid-checkbox">
-                                <input 
-                                  type="checkbox" 
-                                  checked={conf?.isGrid || false}
-                                  onChange={(e) => handleGridConfigChange(loc.name, 'isGrid', e.target.checked)}
-                                />
-                                Convert to Tray
-                              </label>
-                              {conf?.isGrid && (
-                                <div className="grid-inputs">
-                                  <div className="grid-input-group">
-                                    <label>Cols</label>
-                                    <input 
-                                      type="number" 
-                                      value={conf.cols} 
-                                      onChange={(e) => handleGridConfigChange(loc.name, 'cols', parseInt(e.target.value) || 0)}
-                                    />
-                                  </div>
-                                  <div className="grid-input-group">
-                                    <label>Rows</label>
-                                    <input 
-                                      type="number" 
-                                      value={conf.rows} 
-                                      onChange={(e) => handleGridConfigChange(loc.name, 'rows', parseInt(e.target.value) || 0)}
-                                    />
-                                  </div>
-                                  <div className="grid-input-group">
-                                    <label>dX (m)</label>
-                                    <input 
-                                      type="number" 
-                                      step="0.001"
-                                      value={conf.dx} 
-                                      onChange={(e) => handleGridConfigChange(loc.name, 'dx', parseFloat(e.target.value) || 0)}
-                                    />
-                                  </div>
-                                  <div className="grid-input-group">
-                                    <label>dY (m)</label>
-                                    <input 
-                                      type="number" 
-                                      step="0.001"
-                                      value={conf.dy} 
-                                      onChange={(e) => handleGridConfigChange(loc.name, 'dy', parseFloat(e.target.value) || 0)}
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{color: '#64748b', fontSize: '0.8rem'}}>N/A</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{padding: '16px', color: '#64748b'}}>Upload a script to view configuration table.</div>
-          )}
-        </section>
-      </div>
+      {/* MIDDLE ROW: Full Width 3D Workspace */}
+      <section className="visualizer-section glass-panel">
+        <div className="section-header" style={{padding: '16px 16px 0', marginBottom: 8}}>
+          <h2><Box size={18} style={{marginRight: 8, verticalAlign: 'middle'}}/> 3D Workspace Preview</h2>
+        </div>
+        <div className="visualizer-container">
+          <CoordinateVisualizer 
+            locations={locations} 
+            gridConfigs={gridConfigs}
+            selectedLocation={selectedLocation}
+            onSelectLocation={handleSelectLocation}
+            onConfigChange={handleGridConfigChange}
+          />
+        </div>
+      </section>
 
       {/* BOTTOM ROW: Code Preview */}
-      <section className="preview-section glass-panel">
+      <section className="preview-section glass-panel" style={{minHeight: '300px'}}>
           <div className="preview-header">
             <h2>Generated Python</h2>
             <button 
@@ -383,7 +285,7 @@ function App() {
             </button>
           </div>
           
-          <div className="code-container" style={{minHeight: '500px'}}>
+          <div className="code-container" style={{minHeight: '300px'}}>
             {generatedCode ? (
               <pre><code className="language-python">{generatedCode}</code></pre>
             ) : (

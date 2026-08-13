@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, Text, Sphere, Billboard } from '@react-three/drei';
+import { OrbitControls, Grid, Text, Sphere, Billboard, Html } from '@react-three/drei';
 
 interface ParsedLocation {
   name: string;
@@ -20,10 +20,11 @@ interface VisualizerProps {
   locations: ParsedLocation[];
   gridConfigs: Record<string, GridConfig>;
   selectedLocation: string | null;
-  onSelectLocation: (name: string) => void;
+  onSelectLocation: (name: string | null) => void;
+  onConfigChange: (locName: string, field: keyof GridConfig, value: number | boolean) => void;
 }
 
-const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfigs, selectedLocation, onSelectLocation }) => {
+const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfigs, selectedLocation, onSelectLocation, onConfigChange }) => {
   const points = useMemo(() => {
     return locations
       .filter((loc) => loc.type === 'p')
@@ -140,6 +141,89 @@ const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfig
                 {p.name} {isTray ? `(Tray ${p.config.cols}x${p.config.rows})` : ''}
               </Text>
             </Billboard>
+            
+            {/* HTML Overlay for Configuration */}
+            {isSelected && (
+              <Html 
+                position={[originPos[0], originPos[1] + 0.08, originPos[2]]}
+                center
+                zIndexRange={[100, 0]}
+              >
+                <div style={{
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  color: 'white',
+                  width: '240px',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                  pointerEvents: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ margin: 0, fontSize: '0.9rem', color: '#fcd34d' }}>{p.name}</h3>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onSelectLocation(null); }}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0 4px', fontSize: '1.2rem' }}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginBottom: isTray ? '12px' : '0' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={isTray || false}
+                      onChange={(e) => onConfigChange(p.name, 'isGrid', e.target.checked)}
+                    />
+                    Convert to Tray Array
+                  </label>
+                  
+                  {isTray && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Cols (X)</label>
+                        <input 
+                          type="number" 
+                          value={p.config.cols} 
+                          onChange={(e) => onConfigChange(p.name, 'cols', parseInt(e.target.value) || 0)}
+                          style={{ background: '#1e293b', border: '1px solid #334155', color: 'white', padding: '4px 6px', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Rows (Y)</label>
+                        <input 
+                          type="number" 
+                          value={p.config.rows} 
+                          onChange={(e) => onConfigChange(p.name, 'rows', parseInt(e.target.value) || 0)}
+                          style={{ background: '#1e293b', border: '1px solid #334155', color: 'white', padding: '4px 6px', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#94a3b8' }}>dX (m)</label>
+                        <input 
+                          type="number" 
+                          step="0.001"
+                          value={p.config.dx} 
+                          onChange={(e) => onConfigChange(p.name, 'dx', parseFloat(e.target.value) || 0)}
+                          style={{ background: '#1e293b', border: '1px solid #334155', color: 'white', padding: '4px 6px', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.7rem', color: '#94a3b8' }}>dY (m)</label>
+                        <input 
+                          type="number" 
+                          step="0.001"
+                          value={p.config.dy} 
+                          onChange={(e) => onConfigChange(p.name, 'dy', parseFloat(e.target.value) || 0)}
+                          style={{ background: '#1e293b', border: '1px solid #334155', color: 'white', padding: '4px 6px', borderRadius: '4px', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Html>
+            )}
             
             {/* Tray Points */}
             {traySpheres}
