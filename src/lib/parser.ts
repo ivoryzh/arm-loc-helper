@@ -1,6 +1,6 @@
-import type { ParsedLocation } from '../types';
+import type { ParsedLocation, MoveSequenceItem } from '../types';
 
-export const parseScript = (content: string): ParsedLocation[] => {
+export const parseScript = (content: string): { locations: ParsedLocation[], sequence: MoveSequenceItem[] } => {
   const regex = /global\s+([a-zA-Z0-9_]+)\s*=\s*(p\[[\s\S]*?\]|\[[\s\S]*?\])/g;
   const parsedLocations: ParsedLocation[] = [];
   let match;
@@ -18,6 +18,11 @@ export const parseScript = (content: string): ParsedLocation[] => {
       .replace(/\n/g, '') 
       .replace(/\s+/g, ' '); 
       
+    const elementsCount = cleanCoords.replace('[', '').replace(']', '').split(',').length;
+    if (elementsCount !== 6) {
+      continue;
+    }
+      
     parsedLocations.push({
       name,
       type: rawCoords.startsWith('p') ? 'p' : 'q',
@@ -25,5 +30,14 @@ export const parseScript = (content: string): ParsedLocation[] => {
     });
   }
 
-  return parsedLocations;
+  const sequenceRegex = /(move[ljp])\s*\(\s*([a-zA-Z0-9_]+)\s*(?:,.*)?\)/g;
+  const sequence: MoveSequenceItem[] = [];
+  let seqMatch;
+  while ((seqMatch = sequenceRegex.exec(content)) !== null) {
+    const moveType = seqMatch[1];
+    const targetName = seqMatch[2];
+    sequence.push({ moveType, target: targetName });
+  }
+
+  return { locations: parsedLocations, sequence };
 };

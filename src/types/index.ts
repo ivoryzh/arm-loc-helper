@@ -14,3 +14,8 @@ export interface GridConfig {
 
 export type ApiType = 'ti_robots' | 'cri';
 export type URModel = 'UR3' | 'UR5' | 'UR10';
+
+export interface MoveSequenceItem {
+  moveType: string;
+  target: string;
+}

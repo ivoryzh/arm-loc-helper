@@ -1,14 +1,17 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, Text, Sphere, Billboard, Bounds, useBounds } from '@react-three/drei';
+import { OrbitControls, Grid, Text, Sphere, Billboard, Bounds, useBounds, Line } from '@react-three/drei';
 import { ZoomIn, ZoomOut, Focus } from 'lucide-react';
 import RobotArm from './RobotArm';
-import type { ParsedLocation, GridConfig, URModel } from '../../types';
+import type { ParsedLocation, GridConfig, URModel, MoveSequenceItem } from '../../types';
 
 interface VisualizerProps {
   locations: ParsedLocation[];
+  sequence: MoveSequenceItem[];
+  showPath: boolean;
   gridConfigs: Record<string, GridConfig>;
   selectedLocation: string | null;
+  selectedLocationData: ParsedLocation | null;
   selectedModel: URModel;
   onSelectLocation: (name: string | null) => void;
   onConfigChange: (locName: string, field: keyof GridConfig, value: number | boolean) => void;
@@ -24,20 +27,17 @@ const BoundsController = () => {
   return null;
 };
 
-const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfigs, selectedLocation, selectedModel, onSelectLocation, onConfigChange }) => {
+const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, sequence, showPath, gridConfigs, selectedLocation, selectedLocationData, selectedModel, onSelectLocation, onConfigChange }) => {
   const controlsRef = useRef<any>(null);
+  const [activeSegment, setActiveSegment] = useState<number | null>(null);
 
   const handleZoom = (direction: 'in' | 'out') => {
-    if (!controlsRef.current) return;
-    const camera = controlsRef.current.object;
-    const target = controlsRef.current.target;
-    
-    const directionVec = camera.position.clone().sub(target);
-    const factor = direction === 'in' ? 0.8 : 1.25;
-    directionVec.multiplyScalar(factor);
-    
-    camera.position.copy(target).add(directionVec);
-    controlsRef.current.update();
+    if (controlsRef.current) {
+      const zoomAmount = direction === 'in' ? 0.8 : 1.2;
+      controlsRef.current.target.multiplyScalar(zoomAmount);
+      controlsRef.current.object.position.multiplyScalar(zoomAmount);
+      controlsRef.current.update();
+    }
   };
 
   const handleRefit = () => {
@@ -45,25 +45,52 @@ const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfig
   };
 
   const points = useMemo(() => {
-    return locations
-      .filter((loc) => loc.type === 'p')
-      .map((loc) => {
-        const cleanStr = loc.coordinates.replace('[', '').replace(']', '');
-        const parts = cleanStr.split(',').map((p) => parseFloat(p.trim()));
-        
-        if (parts.length >= 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-          return {
-            name: loc.name,
-            x: parts[0],
-            y: parts[1],
-            z: parts[2],
-            config: gridConfigs[loc.name]
-          };
-        }
-        return null;
-      })
-      .filter(Boolean) as { name: string; x: number; y: number; z: number; config: GridConfig }[];
+    return locations.map(loc => {
+      if (loc.type !== 'p') return null;
+      
+      const cleanStr = loc.coordinates.replace('[', '').replace(']', '');
+      const parts = cleanStr.split(',').map(p => parseFloat(p.trim()));
+      
+      if (parts.length >= 3 && !parts.slice(0,3).some(isNaN)) {
+        return {
+          name: loc.name,
+          x: parts[0],
+          y: parts[1],
+          z: parts[2],
+          config: gridConfigs[loc.name]
+        };
+      }
+      return null;
+    }).filter((p): p is {name: string, x: number, y: number, z: number, config: GridConfig} => p !== null);
   }, [locations, gridConfigs]);
+
+  const sequenceSegments = useMemo(() => {
+    const segments: { start: [number, number, number], end: [number, number, number], moveType: string, index: number }[] = [];
+    const validPoints: { pt: [number, number, number], item: MoveSequenceItem }[] = [];
+    
+    sequence.forEach(item => {
+      let loc = locations.find(l => l.name === item.target);
+      if (!loc && item.target.endsWith('_q')) {
+        loc = locations.find(l => l.name === item.target.replace(/_q$/, '_p'));
+      }
+      if (loc && loc.type === 'p') {
+        const parts = loc.coordinates.replace('[', '').replace(']', '').split(',').map(n => parseFloat(n.trim()));
+        if (parts.length >= 3 && !parts.slice(0,3).some(isNaN)) {
+          validPoints.push({ pt: [parts[0], parts[2], -parts[1]], item });
+        }
+      }
+    });
+
+    for (let i = 0; i < validPoints.length - 1; i++) {
+      segments.push({
+        start: validPoints[i].pt,
+        end: validPoints[i+1].pt,
+        moveType: validPoints[i+1].item.moveType,
+        index: i
+      });
+    }
+    return segments;
+  }, [sequence, locations]);
 
   const center = useMemo(() => {
     if (points.length === 0) return [0, 0, 0] as [number, number, number];
@@ -104,13 +131,71 @@ const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfig
       />
       <axesHelper args={[1]} />
       
-      <RobotArm model={selectedModel} position={[0, 0, 0]} />
+      <RobotArm model={selectedModel} position={[0, 0, 0]} targetLocation={selectedLocationData} />
 
       <Bounds fit clip observe margin={1.2}>
         <BoundsController />
 
+      {showPath && sequenceSegments.map((segment, idx) => {
+        const isSelected = activeSegment === segment.index;
+        const color = isSelected ? "#f97316" : "#ffffff";
+        const opacity = isSelected ? 1 : 0.4;
+        
+        const midX = (segment.start[0] + segment.end[0]) / 2;
+        const midY = (segment.start[1] + segment.end[1]) / 2;
+        const midZ = (segment.start[2] + segment.end[2]) / 2;
+
+        return (
+          <group key={`seg-${idx}`}>
+            {/* Visual Line */}
+            <Line 
+              points={[segment.start, segment.end]} 
+              color={color} 
+              lineWidth={isSelected ? 3 : 1.5} 
+              dashed={true} 
+              dashSize={0.015} 
+              gapSize={0.015}
+              transparent
+              opacity={opacity}
+            />
+            
+            {/* Invisible Fat Line for Interaction */}
+            <Line 
+              points={[segment.start, segment.end]} 
+              color="white"
+              lineWidth={20} // Fat hit area 
+              transparent
+              opacity={0} // Invisible
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveSegment(isSelected ? null : segment.index);
+              }}
+              onPointerOver={(e) => {
+                e.stopPropagation();
+                document.body.style.cursor = 'pointer';
+              }}
+              onPointerOut={() => {
+                document.body.style.cursor = 'auto';
+              }}
+            />
+
+            <Text
+              position={[midX, midY + 0.015, midZ]}
+              fontSize={0.015}
+              color={color}
+              anchorX="center"
+              anchorY="middle"
+              fillOpacity={opacity}
+            >
+              {segment.moveType}
+            </Text>
+          </group>
+        );
+      })}
+
       {points.map((p, idx) => {
-        const isSelected = selectedLocation === p.name;
+        const pName = selectedLocation?.endsWith('_q') ? selectedLocation.replace(/_q$/, '_p') : selectedLocation;
+        const isSelected = selectedLocation === p.name || pName === p.name;
         const mainColor = isSelected ? "#f59e0b" : "#3b82f6";
         
         // Generate Tray Array if configured
@@ -295,6 +380,63 @@ const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, gridConfig
           <Focus size={16} /> Refit
         </button>
       </div>
+
+      {/* Path Segment Info Overlay */}
+      {activeSegment !== null && (
+        <div style={{
+          position: 'absolute',
+          bottom: '16px',
+          left: '16px',
+          background: 'var(--overlay-bg)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid #3b82f6',
+          borderRadius: '8px',
+          padding: '16px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+          color: 'var(--text-main)',
+          zIndex: 10,
+          minWidth: '240px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f97316' }} />
+              Segment Info
+            </h4>
+            <button 
+              onClick={() => setActiveSegment(null)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px', fontSize: '1.2rem', lineHeight: 1 }}
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ fontSize: '0.85rem' }}>
+            {(() => {
+               const seg = sequenceSegments.find(s => s.index === activeSegment);
+               if (!seg) return null;
+               const isLinear = seg.moveType === 'movel' || seg.moveType === 'movep';
+               return (
+                 <>
+                   <div style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid var(--panel-border)' }}>
+                     <strong style={{ color: 'var(--text-muted)' }}>Path Type: </strong> 
+                     <span style={{ color: isLinear ? '#3b82f6' : '#f59e0b', fontWeight: 'bold' }}>
+                       {isLinear ? 'Linear Location' : 'Non-Linear Joint'}
+                     </span>
+                     <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>({seg.moveType})</span>
+                   </div>
+                   <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                     <strong style={{ color: 'var(--text-muted)' }}>Start: </strong> 
+                     <span style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>[{seg.start[0].toFixed(3)}, {seg.start[1].toFixed(3)}, {seg.start[2].toFixed(3)}]</span>
+                   </div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                     <strong style={{ color: 'var(--text-muted)' }}>End: </strong> 
+                     <span style={{ color: 'var(--text-main)', fontFamily: 'monospace' }}>[{seg.end[0].toFixed(3)}, {seg.end[1].toFixed(3)}, {seg.end[2].toFixed(3)}]</span>
+                   </div>
+                 </>
+               );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
