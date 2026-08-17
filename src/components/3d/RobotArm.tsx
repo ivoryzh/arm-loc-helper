@@ -10,11 +10,10 @@ interface RobotArmProps {
 }
 
 const URDFRobot: React.FC<{ modelUrl: string; position: [number, number, number]; targetLocation?: ParsedLocation | null }> = ({ modelUrl, position, targetLocation }) => {
-  // @ts-ignore
   const robot = useLoader(URDFLoader, modelUrl, (loader: any) => {
-    // Enable resolving 'package://' paths directly to our public folder
+    // Enable resolving 'package://' paths directly to the official ROS repository via jsDelivr CDN
     loader.packages = {
-      ur_description: '/universal_robot/ur_description'
+      ur_description: 'https://cdn.jsdelivr.net/gh/ros-industrial/universal_robot@master/ur_description'
     };
   });
   
@@ -110,9 +109,9 @@ const URDFRobot: React.FC<{ modelUrl: string; position: [number, number, number]
 };
 
 const RobotArm: React.FC<RobotArmProps> = ({ model, position = [0, 0, 0], targetLocation }) => {
-  let modelUrl = '/universal_robot/ur5.urdf';
-  if (model === 'UR3') modelUrl = '/universal_robot/ur3.urdf';
-  if (model === 'UR10') modelUrl = '/universal_robot/ur10.urdf';
+  let modelUrl = '/ur5.urdf';
+  if (model === 'UR3') modelUrl = '/ur3.urdf';
+  if (model === 'UR10') modelUrl = '/ur10.urdf';
   
   return (
     <Suspense fallback={null}>
