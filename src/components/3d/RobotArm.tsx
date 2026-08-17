@@ -10,6 +10,7 @@ interface RobotArmProps {
 }
 
 const URDFRobot: React.FC<{ modelUrl: string; position: [number, number, number]; targetLocation?: ParsedLocation | null }> = ({ modelUrl, position, targetLocation }) => {
+  // @ts-ignore
   const robot = useLoader(URDFLoader, modelUrl, (loader: any) => {
     // Enable resolving 'package://' paths directly to the official ROS repository via jsDelivr CDN
     loader.packages = {
