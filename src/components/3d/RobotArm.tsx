@@ -110,9 +110,11 @@ const URDFRobot: React.FC<{ modelUrl: string; position: [number, number, number]
 };
 
 const RobotArm: React.FC<RobotArmProps> = ({ model, position = [0, 0, 0], targetLocation }) => {
-  let modelUrl = '/ur5.urdf';
-  if (model === 'UR3') modelUrl = '/ur3.urdf';
-  if (model === 'UR10') modelUrl = '/ur10.urdf';
+  // BASE_URL (not a bare "/...") so this still resolves when the built app is served from a
+  // subpath — e.g. mounted as an IvoryOS Core plugin at /plugins/arm_loc_helper/ instead of "/".
+  let modelUrl = `${import.meta.env.BASE_URL}ur5.urdf`;
+  if (model === 'UR3') modelUrl = `${import.meta.env.BASE_URL}ur3.urdf`;
+  if (model === 'UR10') modelUrl = `${import.meta.env.BASE_URL}ur10.urdf`;
   
   return (
     <Suspense fallback={null}>
