@@ -19,3 +19,14 @@ export interface MoveSequenceItem {
   moveType: string;
   target: string;
 }
+
+export interface CustomModel {
+  id: string;
+  name: string;
+  url: string; // Blob URL
+  x: number; // UR coordinate
+  y: number; // UR coordinate
+  z: number; // UR coordinate
+  rotationY: number; // In radians
+  width: number; // In meters
+}

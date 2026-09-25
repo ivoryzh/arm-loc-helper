@@ -1,0 +1,9 @@
+i want to automate the python module creation from .script files, by reading through the defined locations, programed sequence
+
+convert them into python ArmManager module, where on top of move to location, we should add move to specific location methods
+because arm module is still not very usable or easys to interface if we just simply calling the coordinate
+ArmManager should have the following methods:
+- open_gripper()
+- close_gripper()
+- move_to_specific_location()
+- move_to_specific_location(index)

@@ -5,9 +5,10 @@ import './styles/App.css';
 import Prism from 'prismjs';
 import 'prismjs/themes/prism-tomorrow.css';
 import 'prismjs/components/prism-python';
-import type { ParsedLocation, GridConfig, URModel, ApiType, MoveSequenceItem } from './types';
+import type { ParsedLocation, GridConfig, URModel, ApiType, MoveSequenceItem, CustomModel } from './types';
 import { parseScript } from './lib/parser';
 import { generatePython } from './lib/generator';
+import initialScene from './scene_config.json';
 
 function App() {
   const [fileName, setFileName] = useState<string>('');
@@ -20,6 +21,8 @@ function App() {
   const [generatedCode, setGeneratedCode] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
+  const [customModels, setCustomModels] = useState<CustomModel[]>(initialScene as CustomModel[]);
+  const [isSaving, setIsSaving] = useState(false);
   
   // Selection state for interactivity
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
@@ -88,6 +91,32 @@ function App() {
     setGridConfigs(initialConfigs);
   };
 
+  const handleGlbUpload = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const newModel: CustomModel = {
+      id: Math.random().toString(36).substring(7),
+      name: file.name,
+      url,
+      x: 0,
+      y: 0,
+      z: 0,
+      rotationY: 0,
+      width: 0.2 // Default 20cm
+    };
+    setCustomModels(prev => [...prev, newModel]);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (file.name.endsWith('.script') || file.name.endsWith('.txt')) {
+        handleFileUpload(file);
+      } else if (file.name.endsWith('.glb') || file.name.endsWith('.gltf')) {
+        handleGlbUpload(file);
+      }
+    }
+  };
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -106,6 +135,8 @@ function App() {
       const file = e.dataTransfer.files[0];
       if (file.name.endsWith('.script') || file.name.endsWith('.txt')) {
         handleFileUpload(file);
+      } else if (file.name.endsWith('.glb') || file.name.endsWith('.gltf')) {
+        handleGlbUpload(file);
       }
     }
   }, []);
@@ -124,6 +155,37 @@ function App() {
 
   const handleSelectLocation = (name: string | null) => {
     setSelectedLocation(name);
+  };
+
+  const updateCustomModel = (id: string, field: keyof CustomModel, value: any) => {
+    setCustomModels(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
+  };
+
+  const handleAddManualModel = () => {
+    const newModel: CustomModel = {
+      id: Math.random().toString(36).substring(7),
+      name: 'New Model',
+      url: '/easymax.glb',
+      x: 0,
+      y: 0,
+      z: 0,
+      rotationY: 0,
+      width: 0.2
+    };
+    setCustomModels(prev => [...prev, newModel]);
+  };
+
+  const saveSceneLayout = async () => {
+    setIsSaving(true);
+    try {
+      await fetch('/api/save-scene', {
+        method: 'POST',
+        body: JSON.stringify(customModels, null, 2)
+      });
+    } catch (e) {
+      console.error('Failed to save scene layout', e);
+    }
+    setTimeout(() => setIsSaving(false), 1000);
   };
 
   return (
@@ -167,8 +229,8 @@ function App() {
             Browse
             <input 
               type="file" 
-              accept=".script,.txt" 
-              onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])} 
+              accept=".script,.txt,.glb,.gltf" 
+              onChange={handleFileInput} 
               style={{ display: 'none' }} 
             />
           </label>
@@ -198,6 +260,7 @@ function App() {
               selectedLocation={selectedLocation}
               selectedLocationData={locations.find(l => l.name === selectedLocation) || null}
               selectedModel={selectedModel}
+              customModels={customModels}
               onSelectLocation={handleSelectLocation}
               onConfigChange={handleGridConfigChange}
             />
@@ -231,6 +294,82 @@ function App() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {customModels.length > 0 && (
+              <div className="custom-models-list" style={{ padding: '16px 16px 0 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Custom 3D Models</h3>
+                  <button 
+                    onClick={saveSceneLayout}
+                    disabled={isSaving}
+                    style={{ background: isSaving ? '#10b981' : '#3b82f6', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >
+                    {isSaving ? 'Saved!' : 'Save Layout'}
+                  </button>
+                </div>
+                {customModels.map(model => (
+                  <div key={model.id} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'center' }}>
+                      <input 
+                        type="text" 
+                        value={model.name} 
+                        onChange={e => updateCustomModel(model.id, 'name', e.target.value)}
+                        style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--text-main)', background: 'transparent', border: 'none', borderBottom: '1px dashed var(--text-muted)', width: '150px' }}
+                      />
+                      <button 
+                        onClick={() => {
+                          if (model.url.startsWith('blob:')) URL.revokeObjectURL(model.url);
+                          setCustomModels(prev => prev.filter(m => m.id !== model.id));
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div style={{ marginBottom: '8px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        URL:
+                        <input 
+                          type="text" 
+                          value={model.url} 
+                          onChange={e => updateCustomModel(model.id, 'url', e.target.value)} 
+                          placeholder="/my_model.glb"
+                          style={{ flex: 1, padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} 
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', fontSize: '0.8rem' }}>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)' }}>
+                        X (m)
+                        <input type="number" step="0.01" value={model.x} onChange={e => updateCustomModel(model.id, 'x', parseFloat(e.target.value) || 0)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)' }}>
+                        Y (m)
+                        <input type="number" step="0.01" value={model.y} onChange={e => updateCustomModel(model.id, 'y', parseFloat(e.target.value) || 0)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)' }}>
+                        Z (m)
+                        <input type="number" step="0.01" value={model.z} onChange={e => updateCustomModel(model.id, 'z', parseFloat(e.target.value) || 0)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)' }}>
+                        Rot (deg)
+                        <input type="number" value={Math.round(model.rotationY * 180 / Math.PI)} onChange={e => updateCustomModel(model.id, 'rotationY', (parseFloat(e.target.value) || 0) * Math.PI / 180)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)' }}>
+                        Width (m)
+                        <input type="number" step="0.01" value={model.width} onChange={e => updateCustomModel(model.id, 'width', parseFloat(e.target.value) || 0.1)} style={{ width: '100%', boxSizing: 'border-box', padding: '4px', background: 'var(--overlay-bg)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', borderRadius: '4px' }} />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+                <button 
+                  onClick={handleAddManualModel}
+                  style={{ width: '100%', padding: '8px', background: 'transparent', border: '1px dashed var(--text-muted)', color: 'var(--text-muted)', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  + Add Model
+                </button>
               </div>
             )}
 

@@ -3,7 +3,9 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Text, Sphere, Billboard, Bounds, useBounds, Line } from '@react-three/drei';
 import { ZoomIn, ZoomOut, Focus } from 'lucide-react';
 import RobotArm from './RobotArm';
-import type { ParsedLocation, GridConfig, URModel, MoveSequenceItem } from '../../types';
+import EasyMax from './EasyMax';
+import CustomModelViewer from './CustomModelViewer';
+import type { ParsedLocation, GridConfig, URModel, MoveSequenceItem, CustomModel } from '../../types';
 
 interface VisualizerProps {
   locations: ParsedLocation[];
@@ -13,6 +15,7 @@ interface VisualizerProps {
   selectedLocation: string | null;
   selectedLocationData: ParsedLocation | null;
   selectedModel: URModel;
+  customModels?: CustomModel[];
   onSelectLocation: (name: string | null) => void;
   onConfigChange: (locName: string, field: keyof GridConfig, value: number | boolean) => void;
 }
@@ -27,7 +30,7 @@ const BoundsController = () => {
   return null;
 };
 
-const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, sequence, showPath, gridConfigs, selectedLocation, selectedLocationData, selectedModel, onSelectLocation, onConfigChange }) => {
+const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, sequence, showPath, gridConfigs, selectedLocation, selectedLocationData, selectedModel, customModels = [], onSelectLocation, onConfigChange }) => {
   const controlsRef = useRef<any>(null);
   const [activeSegment, setActiveSegment] = useState<number | null>(null);
 
@@ -132,6 +135,9 @@ const CoordinateVisualizer: React.FC<VisualizerProps> = ({ locations, sequence, 
       <axesHelper args={[1]} />
       
       <RobotArm model={selectedModel} position={[0, 0, 0]} targetLocation={selectedLocationData} />
+      {customModels.map(model => (
+        <CustomModelViewer key={model.id} model={model} />
+      ))}
 
       <Bounds fit clip observe margin={1.2}>
         <BoundsController />
