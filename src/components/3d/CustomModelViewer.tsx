@@ -1,4 +1,3 @@
-import React from 'react';
 import { useGLTF, Resize, Center, Clone } from '@react-three/drei';
 import type { CustomModel } from '../../types';
 

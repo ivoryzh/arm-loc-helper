@@ -1,4 +1,3 @@
-import React from 'react';
 import { useGLTF, Resize, Center } from '@react-three/drei';
 
 interface EasyMaxProps {
@@ -11,11 +10,13 @@ export default function EasyMax({ position = [0, 0, 0], rotation = [0, 0, 0] }: 
   
   return (
     <group position={position} rotation={rotation}>
-      <Center bottom disableX disableZ>
-        <Resize width={0.132}>
-          <primitive object={scene} />
-        </Resize>
-      </Center>
+      <group scale={0.132}>
+        <Center bottom disableX disableZ>
+          <Resize width>
+            <primitive object={scene} />
+          </Resize>
+        </Center>
+      </group>
     </group>
   );
 }

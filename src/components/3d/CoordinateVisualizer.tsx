@@ -3,7 +3,6 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Text, Sphere, Billboard, Bounds, useBounds, Line } from '@react-three/drei';
 import { ZoomIn, ZoomOut, Focus } from 'lucide-react';
 import RobotArm from './RobotArm';
-import EasyMax from './EasyMax';
 import CustomModelViewer from './CustomModelViewer';
 import type { ParsedLocation, GridConfig, URModel, MoveSequenceItem, CustomModel } from '../../types';
 
