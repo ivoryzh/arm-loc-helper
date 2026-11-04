@@ -1,274 +1,259 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Settings2, Download, Upload, FileCode2, Bot, Sun, Moon } from 'lucide-react';
-import CoordinateVisualizer from './components/3d/CoordinateVisualizer';
-import './styles/App.css';
-import Prism from 'prismjs';
-import 'prismjs/themes/prism-tomorrow.css';
-import 'prismjs/components/prism-python';
-import type { ParsedLocation, GridConfig, URModel, ApiType, MoveSequenceItem } from './types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, FilePlus2, FolderOpen, Moon, Move3d, Redo2, RotateCw, Save, Sparkles, Sun, Undo2, Upload } from 'lucide-react';
+import { Scene, type GizmoMode, type Projector } from './components/3d/Scene';
+import { CodePanel } from './components/ui/CodePanel';
+import { ChecksPanel } from './components/ui/ChecksPanel';
+import { Inspector } from './components/ui/Inspector';
+import { DRAG_TYPE, Library } from './components/ui/Library';
+import { MotionPanel } from './components/ui/MotionPanel';
+import { Toggle } from './components/ui/fields';
+import { checkProject } from './lib/checks';
+import { CATALOG, emptyProject, makeComponent, makeSafePoint, slotMatrix, type Project } from './lib/deck';
+import { demoProject } from './lib/demo';
+import { nearest, ik, elbowUp, type Joints } from './lib/kinematics';
 import { parseScript } from './lib/parser';
-import { generatePython } from './lib/generator';
+import { ROBOTS } from './lib/robots';
+import { safePointJoints, tcpToFlange } from './lib/runtimeDeck';
+import { download, normalizeProject, projectFileName } from './lib/storage';
+import { waypointMatrix } from './lib/teach';
+import { StoreProvider, useStore } from './state';
+import './styles/App.css';
 
-function App() {
-  const [fileName, setFileName] = useState<string>('');
-  const [locations, setLocations] = useState<ParsedLocation[]>([]);
-  const [sequence, setSequence] = useState<MoveSequenceItem[]>([]);
-  const [showPath, setShowPath] = useState<boolean>(true);
-  const [gridConfigs, setGridConfigs] = useState<Record<string, GridConfig>>({});
-  const [targetApi, setTargetApi] = useState<ApiType>('ti_robots');
-  const [selectedModel, setSelectedModel] = useState<URModel>('UR5');
-  const [generatedCode, setGeneratedCode] = useState<string>('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLightMode, setIsLightMode] = useState(false);
-  
-  // Selection state for interactivity
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
-  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+type Tab = 'inspect' | 'checks' | 'motion' | 'python';
+
+function initialDark(): boolean {
+  try {
+    const saved = localStorage.getItem('arm-loc-helper/theme');
+    if (saved) return saved === 'dark';
+  } catch { /* no storage */ }
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+}
+
+function Editor() {
+  const { project, selection, update, replace, select, undo, redo, canUndo, canRedo, arm } = useStore();
+  const [tab, setTab] = useState<Tab>('inspect');
+  const [mode, setMode] = useState<GizmoMode>('translate');
+  const [snap, setSnap] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
+  const [showPath, setShowPath] = useState(true);
+  const [dark, setDark] = useState(initialDark);
+  const [previewSlot, setPreviewSlot] = useState(0);
+  const [itemsVersion, setItemsVersion] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const projector = useRef<Projector | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const findings = useMemo(() => checkProject(project), [project]);
+  const problems = findings.filter((f) => f.level === 'error').length;
+  const params = ROBOTS[project.robot.model].params;
+  const homePoint = project.safePoints.find((s) => s.id === project.home) ?? project.safePoints[0];
+  const homeQ = useMemo(() => (homePoint ? safePointJoints(homePoint, project) : null), [homePoint, project]);
+  const onItemsChanged = useCallback(() => setItemsVersion((v) => v + 1), []);
 
   useEffect(() => {
-    document.body.classList.toggle('light-mode', isLightMode);
-  }, [isLightMode]);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    try { localStorage.setItem('arm-loc-helper/theme', dark ? 'dark' : 'light'); } catch { /* fine */ }
+  }, [dark]);
 
   useEffect(() => {
-    if (locations.length > 0) {
-      const code = generatePython(locations, gridConfigs, targetApi);
-      setGeneratedCode(code);
-    }
-  }, [gridConfigs, targetApi, locations]);
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
-  // Globally prevent browser from navigating to dropped files
+  // the arm shows the selected slot, safe point or waypoint (unless a preview is playing)
   useEffect(() => {
-    const preventDefault = (e: Event) => e.preventDefault();
-    window.addEventListener('dragover', preventDefault);
-    window.addEventListener('drop', preventDefault);
-    return () => {
-      window.removeEventListener('dragover', preventDefault);
-      window.removeEventListener('drop', preventDefault);
+    const a = arm.current;
+    if (a.player?.running) return;
+    a.player = null;
+    a.playing = false;
+    let target: Joints | null = null;
+    const solve = (tcp: number[]) => {
+      const sols = ik(tcpToFlange(tcp, project), params);
+      return homeQ ? nearest(sols, homeQ, elbowUp) ?? nearest(sols, homeQ) : null;
     };
-  }, []);
+    if (selection?.type === 'component') {
+      const c = project.components.find((x) => x.id === selection.id);
+      if (c && c.kind !== 'block') target = solve(slotMatrix(c, Math.min(previewSlot, c.rows * c.cols - 1)));
+    } else if (selection?.type === 'safe') {
+      const s = project.safePoints.find((x) => x.id === selection.id);
+      if (s) target = safePointJoints(s, project);
+    } else if (selection?.type === 'waypoint') {
+      const w = project.waypoints.find((x) => x.name === selection.id);
+      if (w) target = w.q ?? solve(waypointMatrix(w, project));
+    }
+    a.target = target ?? homeQ;
+  }, [selection, project, previewSlot, homeQ, params, arm]);
 
+  useEffect(() => setPreviewSlot(0), [selection?.id]);
+
+  const add = useCallback((key: string, at?: [number, number]) => {
+    const reach = ROBOTS[project.robot.model].reach;
+    const [x, y] = at ?? [0.05 * (project.components.length % 5), reach * 0.55];
+    if (key === 'safe_point') {
+      const s = makeSafePoint(project, x, y);
+      update((p) => ({ ...p, safePoints: [...p.safePoints, s] }));
+      select({ type: 'safe', id: s.id });
+    } else {
+      const entry = CATALOG.find((e) => e.key === key);
+      if (!entry) return;
+      const c = makeComponent(entry, project, x, y);
+      update((p) => ({ ...p, components: [...p.components, c] }));
+      select({ type: 'component', id: c.id });
+    }
+    setTab('inspect');
+  }, [project, update, select]);
+
+  const importFile = useCallback(async (file: File) => {
+    const text = await file.text();
+    if (file.name.endsWith('.json')) {
+      try {
+        replace(normalizeProject(JSON.parse(text)));
+        setNotice(`Opened ${file.name}`);
+      } catch {
+        setNotice(`${file.name} is not a deck file`);
+      }
+      return;
+    }
+    const { waypoints, script } = parseScript(text);
+    if (!waypoints.length) {
+      setNotice(`No waypoints in ${file.name} (looking for name = p[...] and name = [...])`);
+      return;
+    }
+    update((p): Project => ({ ...p, waypoints, script: { fileName: file.name, ...script } }));
+    select(null);
+    setNotice(`${waypoints.length} waypoint${waypoints.length > 1 ? 's' : ''} from ${file.name}: click one to build a station, tray or safe point on it`);
+  }, [replace, update, select]);
+
+  // keyboard: undo/redo, delete, gizmo mode, escape
   useEffect(() => {
-    if (generatedCode) {
-      Prism.highlightAll();
-    }
-  }, [generatedCode]);
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+      if (e.key === 'Escape') select(null);
+      if (e.key === 'g' || e.key === 'w') setMode('translate');
+      if (e.key === 'r' || e.key === 'e') setMode('rotate');
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+        if (selection.type === 'component') update((p) => ({ ...p, components: p.components.filter((c) => c.id !== selection.id) }));
+        if (selection.type === 'waypoint') update((p) => ({ ...p, waypoints: p.waypoints.filter((w) => w.name !== selection.id) }));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo, select, selection, update]);
 
+  // files dropped anywhere: a .script or a deck .json
   useEffect(() => {
-    if (selectedLocation && rowRefs.current[selectedLocation]) {
-      rowRefs.current[selectedLocation]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
-      });
-    }
-  }, [selectedLocation]);
+    const over = (e: DragEvent) => e.preventDefault();
+    const drop = (e: DragEvent) => {
+      e.preventDefault();
+      const f = e.dataTransfer?.files?.[0];
+      if (f) void importFile(f);
+    };
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, [importFile]);
 
-  const handleGridConfigChange = (locName: string, field: keyof GridConfig, value: number | boolean) => {
-    setGridConfigs(prev => ({
-      ...prev,
-      [locName]: {
-        ...prev[locName],
-        [field]: value
-      }
-    }));
+  const openFile = (accept: string) => {
+    if (!fileInput.current) return;
+    fileInput.current.accept = accept;
+    fileInput.current.click();
   };
 
-  const handleFileUpload = async (file: File) => {
-    setFileName(file.name);
-    const content = await file.text();
-    const { locations: parsedLocs, sequence: parsedSeq } = parseScript(content);
-    setLocations(parsedLocs);
-    setSequence(parsedSeq);
-    
-    const initialConfigs: Record<string, GridConfig> = {};
-    parsedLocs.forEach(loc => {
-      if (loc.type === 'p') {
-        initialConfigs[loc.name] = { isGrid: false, cols: 3, rows: 3, dx: 0.05, dy: 0.05 };
-      }
-    });
-    setGridConfigs(initialConfigs);
-  };
-
-  const onDragOver = useCallback((e: React.DragEvent) => {
+  const onViewportDrop = (e: React.DragEvent) => {
+    const key = e.dataTransfer.getData(DRAG_TYPE);
+    setDropping(false);
+    if (!key) return;
     e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const onDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      if (file.name.endsWith('.script') || file.name.endsWith('.txt')) {
-        handleFileUpload(file);
-      }
-    }
-  }, []);
-
-  const downloadPython = () => {
-    const blob = new Blob([generatedCode], { type: 'text/python' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName ? `${fileName.replace('.script', '')}_converted.py` : 'robot_sequence.py';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    e.stopPropagation();
+    const at = projector.current?.(e.clientX, e.clientY);
+    add(key, at ? [Math.round(at[0] * 200) / 200, Math.round(at[1] * 200) / 200] : undefined);
   };
 
-  const handleSelectLocation = (name: string | null) => {
-    setSelectedLocation(name);
-  };
+  const tabs: { id: Tab; label: string; badge?: number }[] = [
+    { id: 'inspect', label: selection ? 'Inspect' : 'Deck' },
+    { id: 'checks', label: 'Checks', badge: problems },
+    { id: 'motion', label: 'Motion' },
+    { id: 'python', label: 'Python' },
+  ];
 
   return (
-    <div 
-      className="app-container"
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      <header className="header" style={{ justifyContent: 'space-between' }}>
-        <div className="logo">
-          <Bot size={24} color="#3b82f6" />
-          <span style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>URScript <span className="highlight">Visualizer</span></span>
+    <div className="app">
+      <header className="topbar">
+        <div className="brand"><Bot size={20} /><span>Arm Location <em>Helper</em></span></div>
+        <span className="deck-name" title="The deck (edit it with nothing selected)">{project.name} · {ROBOTS[project.robot.model].label}</span>
+        <div className="toolbar">
+          <button className="icon-btn" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo}><Undo2 size={16} /></button>
+          <button className="icon-btn" title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={redo}><Redo2 size={16} /></button>
+          <span className="sep" />
+          <button className="btn ghost" onClick={() => { if (confirm('Start an empty deck? (Undo brings this one back.)')) replace(emptyProject()); }}><FilePlus2 size={15} /> New</button>
+          <button className="btn ghost" onClick={() => replace(demoProject())}><Sparkles size={15} /> Demo</button>
+          <button className="btn ghost" onClick={() => openFile('.script,.urscript,.txt')} title="Waypoints from a URScript file, as Polyscope saves it"><Upload size={15} /> Import .script</button>
+          <button className="btn ghost" onClick={() => openFile('.json')} title="A deck saved with Save"><FolderOpen size={15} /> Open</button>
+          <button className="btn ghost" onClick={() => download(projectFileName(project), JSON.stringify(project, null, 2), 'application/json')}><Save size={15} /> Save</button>
+          <span className="sep" />
+          <button className="icon-btn" title={dark ? 'Light theme' : 'Dark theme'} onClick={() => setDark(!dark)}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
         </div>
-        <button onClick={() => setIsLightMode(!isLightMode)} className="btn" style={{ padding: '6px 12px', background: 'transparent', color: 'var(--text-main)', border: '1px solid var(--panel-border)', boxShadow: 'none' }}>
-          {isLightMode ? <Moon size={16} /> : <Sun size={16} />} 
-          {isLightMode ? 'Dark Mode' : 'Light Mode'}
-        </button>
+        <input ref={fileInput} type="file" accept=".script,.urscript,.txt,.json" hidden
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = ''; }} />
       </header>
 
-      {/* TOP ROW: Dropzone & Settings */}
-      <div className="top-bar-container">
-        {locations.length > 0 && (
-          <div className="api-selector">
-            <Settings2 size={16} color="var(--text-muted)" />
-            <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value as URModel)}>
-              <option value="UR3">UR3 (Small)</option>
-              <option value="UR5">UR5 (Medium)</option>
-              <option value="UR10">UR10 (Large)</option>
-            </select>
-          </div>
-        )}
-        <div 
-          className={`drop-zone ${isDragging ? 'dragging' : ''}`}
-        >
-          <Upload size={24} className="upload-icon" />
-          <div>
-            <h3 style={{fontSize: '0.9rem'}}>Drag .script file here</h3>
-          </div>
-          <label className="btn" style={{padding: '6px 12px', fontSize: '0.8rem'}}>
-            Browse
-            <input 
-              type="file" 
-              accept=".script,.txt" 
-              onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])} 
-              style={{ display: 'none' }} 
-            />
-          </label>
-          {fileName && <span className="file-name" style={{fontSize: '0.8rem'}}>{fileName}</span>}
-        </div>
-      </div>
+      <div className="workspace">
+        <Library onAdd={(k) => add(k)} findings={findings} />
 
-      <div className="main-content-split">
-        {/* LEFT COLUMN: 3D Workspace */}
-        <section className="visualizer-section glass-panel" style={{ padding: '16px' }}>
-          <div className="visualizer-container">
-            <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10, background: 'var(--overlay-bg)', padding: '8px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input 
-                type="checkbox" 
-                id="showPath" 
-                checked={showPath} 
-                onChange={(e) => setShowPath(e.target.checked)} 
-                style={{ cursor: 'pointer' }}
-              />
-              <label htmlFor="showPath" style={{ color: 'var(--text-main)', fontSize: '0.9rem', cursor: 'pointer' }}>Show Movement Path</label>
+        <main className={`viewport ${dropping ? 'dropping' : ''}`}
+          onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG_TYPE)) { e.preventDefault(); setDropping(true); } }}
+          onDragLeave={() => setDropping(false)}
+          onDrop={onViewportDrop}>
+          <Scene project={project} home={homeQ} mode={mode} snap={snap} showLabels={showLabels} showPath={showPath} dark={dark}
+            itemsVersion={itemsVersion} projector={projector} onItemsChanged={onItemsChanged} />
+          <div className="overlay top-left">
+            <div className="seg">
+              <button className={mode === 'translate' ? 'on' : ''} onClick={() => setMode('translate')} title="Move (G)"><Move3d size={15} /> Move</button>
+              <button className={mode === 'rotate' ? 'on' : ''} onClick={() => setMode('rotate')} title="Turn about Z (R)"><RotateCw size={15} /> Turn</button>
             </div>
-            <CoordinateVisualizer 
-              locations={locations} 
-              sequence={sequence}
-              showPath={showPath}
-              gridConfigs={gridConfigs}
-              selectedLocation={selectedLocation}
-              selectedLocationData={locations.find(l => l.name === selectedLocation) || null}
-              selectedModel={selectedModel}
-              onSelectLocation={handleSelectLocation}
-              onConfigChange={handleGridConfigChange}
-            />
+            <Toggle label="Snap 5 mm / 5°" checked={snap} onChange={setSnap} />
+            <Toggle label="Labels" checked={showLabels} onChange={setShowLabels} />
+            {project.waypoints.length > 0 && <Toggle label="Script path" checked={showPath} onChange={setShowPath} />}
           </div>
-        </section>
+          <div className="overlay bottom-left muted small">
+            Base frame: <span className="x">X</span> <span className="y">Y</span> <span className="z">Z</span> · drag to orbit, right-drag to pan
+          </div>
+          {notice && <div className="toast">{notice}</div>}
+        </main>
 
-        {/* RIGHT COLUMN: Code Preview */}
-        <section className="preview-section glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            {locations.length > 0 && (
-              <div className="locations-list" style={{ padding: '16px 16px 0 16px' }}>
-                <h3 style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Locations (Click to view)</h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {locations.filter(loc => loc.type === 'q').map((loc) => (
-                    <button 
-                      key={loc.name}
-                      onClick={() => handleSelectLocation(loc.name === selectedLocation ? null : loc.name)}
-                      style={{
-                        background: selectedLocation === loc.name ? '#3b82f6' : 'var(--card-bg)',
-                        color: selectedLocation === loc.name ? 'white' : 'var(--text-main)',
-                        border: `1px solid ${selectedLocation === loc.name ? '#60a5fa' : 'var(--card-border)'}`,
-                        padding: '6px 12px',
-                        borderRadius: '16px',
-                        cursor: 'pointer',
-                        fontSize: '0.85rem',
-                        transition: 'all 0.2s ease',
-                        boxShadow: selectedLocation === loc.name ? '0 0 10px rgba(59, 130, 246, 0.5)' : 'none'
-                      }}
-                    >
-                      {loc.name.replace(/_q$/, '')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <h2 style={{ fontSize: '1.1rem' }}>Generated Python</h2>
-                {locations.length > 0 && (
-                  <select value={targetApi} onChange={(e) => setTargetApi(e.target.value as ApiType)} style={{ background: 'var(--card-bg)', color: 'var(--text-main)', border: '1px solid var(--card-border)', padding: '4px 8px', borderRadius: '4px' }}>
-                    <option value="ti_robots">ti_robots API</option>
-                    <option value="cri">CRI API</option>
-                  </select>
-                )}
-              </div>
-              <button 
-                className="btn" 
-                onClick={downloadPython}
-                disabled={!generatedCode}
-                style={{ padding: '6px 12px', fontSize: '0.85rem' }}
-              >
-                <Download size={16} /> Download
+        <aside className="column right">
+          <nav className="tabs">
+            {tabs.map((t) => (
+              <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+                {t.label}{t.badge ? <span className="badge error">{t.badge}</span> : null}
               </button>
-            </div>
-            <div className="code-container">
-              {generatedCode ? (
-                <pre>
-                  <code className="language-python">{generatedCode}</code>
-                </pre>
-              ) : (
-                <div className="empty-state">
-                  <FileCode2 size={48} className="empty-icon" />
-                  <p>Upload a .script file to generate Python code</p>
-                </div>
-              )}
-            </div>
-        </section>
+            ))}
+          </nav>
+          <div className="tab-body">
+            {tab === 'inspect' && <Inspector previewSlot={previewSlot} setPreviewSlot={setPreviewSlot} />}
+            {tab === 'checks' && <ChecksPanel findings={findings} />}
+            {tab === 'motion' && <MotionPanel key={project.robot.model} onItemsChanged={onItemsChanged} />}
+            {tab === 'python' && <CodePanel findings={findings} />}
+          </div>
+        </aside>
       </div>
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <StoreProvider>
+      <Editor />
+    </StoreProvider>
+  );
+}

@@ -1,0 +1,15 @@
+def Program():
+  set_tcp(p[0.0,0.0,0.16,0.0,0.0,0.0])
+  set_payload(1.0)
+  global Waypoint_1_p=p[.300000, .300000, .150000, 0.000000, 3.141593, 0.000000]
+  global Waypoint_1_q=[1.176500, -1.448000, 2.003700, -2.126500, -1.570800, -0.394300]
+  global tray_corner_p=p[.300000, .300000, .070000, .021800, 3.140400, 0.000000]
+  global rack_slot_p=p[-.460000, .300000, .120000, 1.209200, 1.209200, -1.209200]
+  global safe_right_q=[2.430000, -1.530000, 1.760000, -1.800000, -1.570000, 0.860000]
+  movej(safe_right_q, a=1.39, v=1.04)
+  movej(get_inverse_kin(Waypoint_1_p, qnear=Waypoint_1_q), a=1.39, v=1.04)
+  movel(tray_corner_p, a=1.2, v=0.05)
+  movel(Waypoint_1_p, a=1.2, v=0.05)
+  movej(safe_right_q, a=1.39, v=1.04)
+  movel(rack_slot_p, a=1.2, v=0.05)
+end

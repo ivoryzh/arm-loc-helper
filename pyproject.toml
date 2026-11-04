@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arm-loc-helper"
+version = "0.1.0"
+description = "Lay out a robot arm's deck in 3D (trays, stations, side-load racks, safe points), import URScript waypoints, and export a safe pick-and-place controller for Universal Robots (ur_rtde)."
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["ivoryos", "self-driving-lab", "universal-robots", "ur_rtde", "pick-and-place", "lab-automation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Code Generators",
+]
+# The runtime (and every exported controller) needs only the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+# a real Universal Robots arm
+ur = ["ur_rtde>=1.5"]
+# the editor as a page inside ivoryos-next
+edge = ["ivoryos-edge>=0.1.1"]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/ivoryzh/arm-loc-helper"
+Source = "https://github.com/ivoryzh/arm-loc-helper"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["arm_loc_helper"]
+
+[tool.setuptools.package-data]
+# the built page only; the Vite source in src/ is not shipped
+arm_loc_helper = ["static/*.html", "static/*.urdf", "static/*.png", "static/*.svg", "static/assets/*"]

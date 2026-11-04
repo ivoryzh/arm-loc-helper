@@ -1,102 +1,85 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: dark;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  /* Dark Theme Variables (Default) */
-  --bg-gradient: radial-gradient(circle at 50% -20%, #1e293b, #020617);
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --panel-bg: rgba(30, 41, 59, 0.7);
-  --panel-border: rgba(255, 255, 255, 0.1);
-  --card-bg: #1e293b;
-  --card-border: #334155;
-  --hover-bg: #334155;
-  --input-bg: #0f172a;
-  --overlay-bg: rgba(15, 23, 42, 0.9);
-  --list-item-bg: #0f172a;
-}
-
-body.light-mode {
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --accent-text: #ffffff;
+  --ok: #0d9488;
+  --warn: #d97706;
+  --bad: #dc2626;
+  --ok-soft: #ccfbf1;
+  --warn-soft: #fef3c7;
+  --bad-soft: #fee2e2;
+  --viewport: #eef2f7;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 16px rgba(15, 23, 42, 0.06);
   color-scheme: light;
-  --bg-gradient: radial-gradient(circle at 50% -20%, #f1f5f9, #cbd5e1);
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --panel-bg: rgba(255, 255, 255, 0.8);
-  --panel-border: rgba(0, 0, 0, 0.1);
-  --card-bg: #ffffff;
-  --card-border: #e2e8f0;
-  --hover-bg: #f1f5f9;
-  --input-bg: #f8fafc;
-  --overlay-bg: rgba(255, 255, 255, 0.95);
-  --list-item-bg: #f1f5f9;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0b1120;
+    --panel: #111827;
+    --panel-2: #0f172a;
+    --line: #1f2a3c;
+    --line-strong: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #3b82f6;
+    --accent-soft: #1e3a5f;
+    --ok: #2dd4bf;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --ok-soft: #0f3b38;
+    --warn-soft: #3d2f0b;
+    --bad-soft: #3f1517;
+    --viewport: #0f172a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b1120;
+  --panel: #111827;
+  --panel-2: #0f172a;
+  --line: #1f2a3c;
+  --line-strong: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #3b82f6;
+  --accent-soft: #1e3a5f;
+  --ok: #2dd4bf;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --ok-soft: #0f3b38;
+  --warn-soft: #3d2f0b;
+  --bad-soft: #3f1517;
+  --viewport: #0f172a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
 
 body {
-  margin: 0;
-  display: flex;
-  min-height: 100vh;
-  width: 100vw;
-  background: var(--bg-gradient);
-  color: var(--text-main);
-  overflow-x: hidden;
-  transition: background 0.3s ease, color 0.3s ease;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
-#root {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  margin: 0;
-  color: #f1f5f9;
-}
-
-.glass-panel {
-  background: var(--panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
-  transition: background 0.3s ease, border 0.3s ease;
-}
-
-.btn {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
-}
-
-.btn:active {
-  transform: translateY(0);
-}
+button, input, select { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }

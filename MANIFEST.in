@@ -1,0 +1,2 @@
+include README.md
+recursive-include arm_loc_helper/static *.html *.urdf *.svg *.png *.css *.js
