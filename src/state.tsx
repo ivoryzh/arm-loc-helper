@@ -111,7 +111,11 @@ interface Store {
   arm: RefObject<ArmView>;
 }
 
-const Ctx = createContext<Store | null>(null);
+// One context for the life of the page: when a hot reload runs this module again, the provider that
+// is already mounted must still be the one the reloaded components look for.
+const hot = import.meta.hot;
+const Ctx: React.Context<Store | null> = hot?.data.ctx ?? createContext<Store | null>(null);
+if (hot) hot.data.ctx = Ctx;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, null, () => ({

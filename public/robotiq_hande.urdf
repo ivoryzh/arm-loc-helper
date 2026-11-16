@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!-- Robotiq Hand-E, visuals and joints only, from robotiq_hande_description's robotiq_hande_gripper.xacro
+     (AGH-CEAI/robotiq_hande_description @ f0f1a87, Apache-2.0; original URDF by Cristian C Beltran-Hernandez).
+     The 11 mm I/O coupler is a plain cylinder here: its mesh is 9 MB. Fingers slide along x;
+     robotiq_hande_left_finger_joint is each finger's travel from the middle, 0 closed to 0.025 open. -->
+<robot name="robotiq_hande">
+  <link name="gripper_base"/>
+  <joint name="robotiq_hande_coupler_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="gripper_base"/>
+    <child link="robotiq_hande_coupler"/>
+  </joint>
+  <link name="robotiq_hande_coupler">
+    <visual>
+      <origin xyz="0 0 0.0055" rpy="0 0 0"/>
+      <geometry><cylinder length="0.011" radius="0.0375"/></geometry>
+      <material name=""><color rgba="0.1 0.1 0.1 1"/></material>
+    </visual>
+  </link>
+  <joint name="robotiq_hande_base_joint" type="fixed">
+    <origin xyz="0 0 0.011" rpy="0 0 0"/>
+    <parent link="robotiq_hande_coupler"/>
+    <child link="robotiq_hande_link"/>
+  </joint>
+  <link name="robotiq_hande_link">
+    <visual>
+      <geometry><mesh filename="package://robotiq_hande_description/meshes/hande.dae"/></geometry>
+    </visual>
+  </link>
+  <joint name="robotiq_hande_left_finger_joint" type="prismatic">
+    <origin xyz="0 0 0.099" rpy="0 0 0"/>
+    <parent link="robotiq_hande_link"/>
+    <child link="robotiq_hande_left_finger"/>
+    <axis xyz="1 0 0"/>
+    <limit effort="130" lower="0" upper="0.025" velocity="0.15"/>
+  </joint>
+  <link name="robotiq_hande_left_finger">
+    <visual>
+      <geometry><mesh filename="package://robotiq_hande_description/meshes/finger.dae"/></geometry>
+    </visual>
+  </link>
+  <joint name="robotiq_hande_right_finger_joint" type="prismatic">
+    <origin xyz="0 0 0.099" rpy="0 0 0"/>
+    <parent link="robotiq_hande_link"/>
+    <child link="robotiq_hande_right_finger"/>
+    <axis xyz="-1 0 0"/>
+    <limit effort="130" lower="0" upper="0.025" velocity="0.15"/>
+    <mimic joint="robotiq_hande_left_finger_joint" multiplier="1" offset="0"/>
+  </joint>
+  <link name="robotiq_hande_right_finger">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 3.141592653589793"/>
+      <geometry><mesh filename="package://robotiq_hande_description/meshes/finger.dae"/></geometry>
+    </visual>
+  </link>
+</robot>

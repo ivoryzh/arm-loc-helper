@@ -1,6 +1,7 @@
 // A small UR5e deck to start from: vials picked top-down from a tray, a balance and a capper, a
 // slide rack loaded from the side, and three safe points (home in the middle, one per side).
 import { DEFAULT_GRIPPER, DEFAULT_MOTION, type DeckComponent, type Project } from './deck';
+import { TOOLS, mountTcp } from './tools';
 
 const base = { rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, toolYaw: 0, yaw: 0, filled: false };
 
@@ -22,7 +23,7 @@ export function demoProject(): Project {
     version: 1,
     name: 'Demo deck',
     className: 'DemoDeckArm',
-    robot: { model: 'UR5e', tcp: [0, 0, 0.16, 0, 0, 0], payload: 1 },
+    robot: { model: 'UR5e', tcp: mountTcp(TOOLS[DEFAULT_GRIPPER.model], 'straight'), payload: 1 },
     benchZ: 0,
     gripper: { ...DEFAULT_GRIPPER },
     motion: { ...DEFAULT_MOTION },

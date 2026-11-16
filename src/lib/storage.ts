@@ -2,6 +2,7 @@
 import { CATALOG, DEFAULT_GRIPPER, DEFAULT_MOTION, emptyProject, slug, type DeckComponent, type Project, type SafePointDef, type Waypoint } from './deck';
 import type { Joints } from './kinematics';
 import { ROBOTS, type RobotModelId } from './robots';
+import { TOOLS, type ToolId } from './tools';
 
 const KEY = 'arm-loc-helper/project@1';
 
@@ -61,6 +62,8 @@ export function normalizeProject(raw: unknown): Project {
     benchZ: num(r.benchZ, 0),
     gripper: {
       type: (['robotiq', 'digital_out', 'none'].includes(g.type as string) ? g.type : DEFAULT_GRIPPER.type) as Project['gripper']['type'],
+      model: (Object.keys(TOOLS).includes(g.model as string) ? g.model : DEFAULT_GRIPPER.model) as ToolId,
+      fingerAxis: g.fingerAxis === 'y' ? 'y' : 'x',
       speed: num(g.speed, DEFAULT_GRIPPER.speed), force: num(g.force, DEFAULT_GRIPPER.force), pin: num(g.pin, 0),
       tool: g.tool === true, closeLevel: g.closeLevel !== false,
     },

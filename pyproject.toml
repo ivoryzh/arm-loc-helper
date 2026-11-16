@@ -37,4 +37,4 @@ include = ["arm_loc_helper"]
 
 [tool.setuptools.package-data]
 # the built page only; the Vite source in src/ is not shipped
-arm_loc_helper = ["static/*.html", "static/*.urdf", "static/*.png", "static/*.svg", "static/assets/*"]
+arm_loc_helper = ["static/*.html", "static/*.urdf", "static/*.stl", "static/*.png", "static/*.svg", "static/assets/*"]

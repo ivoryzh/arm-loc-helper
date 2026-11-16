@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { checkProject } from '../src/lib/checks';
 import { CATALOG, approachMatrix, className, makeComponent, slotMatrix, slug, tiltFromSkill, type Project } from '../src/lib/deck';
 import { demoProject } from '../src/lib/demo';
+import { itemKind, placeholderRadius, plateTurn } from '../src/lib/items';
 import { generatePython, pyLiteral } from '../src/lib/generator';
 import { multiply, rotX, rotY, toAxisAngle } from '../src/lib/mat4';
 import { buildTrajectory } from '../src/lib/motion';
@@ -33,6 +34,26 @@ describe('the deck model', () => {
     expect(s[11]).toBeCloseTo(rack.z + 2 * rack.rowPitch, 9); // levels go up
     expect(a[3] - s[3]).toBeCloseTo(rack.approach, 9); // out toward +x, at the same height
     expect(a[11]).toBeCloseTo(s[11], 9);
+  });
+
+  it('lays a plate square in its nest however the gripper is turned, and marks a side rack\'s slots with dots', () => {
+    const nest = { ...makeComponent(CATALOG.find((e) => e.key === 'well_plate')!, demoProject(), 0.3, 0.3), yaw: 35 };
+    expect(itemKind(nest)).toBe('plate');
+    for (const toolYaw of [0, 90, 25]) {
+      const c = { ...nest, toolYaw };
+      // the plate's long side, turned by plateTurn in the TCP's frame, in the base frame
+      const s = slotMatrix(c, 0), t = plateTurn(c);
+      const long = [s[0] * Math.cos(t) + s[1] * Math.sin(t), s[4] * Math.cos(t) + s[5] * Math.sin(t)];
+      // is the nest's own x: the long side of its block
+      expect(long[0]).toBeCloseTo(Math.cos((35 * Math.PI) / 180), 9);
+      expect(long[1]).toBeCloseTo(Math.sin((35 * Math.PI) / 180), 9);
+    }
+    expect(nest.size[0]).toBeGreaterThan(nest.size[1]);
+
+    const rack = makeComponent(CATALOG.find((e) => e.key === 'side_rack')!, demoProject(), 0.3, 0.3);
+    expect(rack.label).toBe('Side rack');
+    expect(itemKind(rack)).toBe('placeholder'); // not a slide: whatever the rack holds
+    expect(placeholderRadius(rack) * 2).toBeLessThan(Math.min(rack.colPitch, rack.rowPitch));
   });
 
   it('names things as Python can', () => {

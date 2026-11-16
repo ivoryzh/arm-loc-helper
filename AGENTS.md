@@ -36,12 +36,15 @@ IvoryOS also picks up as an instrument.
   RobotiqGripper, DigitalOutputGripper), `next_plugin.py` (ivoryos-edge Plugin, `placement="tab"`),
   `__main__.py` (serves `static/`), `static/` (the built page: `npm run build`, committed).
 - `src/lib/`: everything that is not drawing. `deck.ts` (model + geometry), `planner.ts`,
-  `motion.ts`, `checks.ts`, `kinematics.ts` + `robots.ts`, `runtimeDeck.ts` (export format),
+  `motion.ts`, `checks.ts`, `kinematics.ts` + `robots.ts`, `tools.ts` (end effectors and mount presets:
+  drawing only, the TCP is the truth), `runtimeDeck.ts` (export format),
   `generator.ts`, `parser.ts`, `teach.ts`, `storage.ts`, `demo.ts`.
 - `src/components/3d/`: the scene; `src/components/ui/`: the panels; `src/state.tsx`: the store
   (undo/redo, selection, and the per-frame `arm` ref the scene reads, kept out of React state).
 - `public/*.urdf`: ros-industrial URDFs; `scripts/make_e_series_urdf.py` derives UR5e/UR10e from
-  UR3e. The `.glb` files in `public/` are unused (kept out of the package by `.gitignore`).
+  UR3e. `public/robotiq_*.urdf`, `public/onrobot_rg*.urdf`: the grippers (root on the flange, z out, fingers opening along x;
+  the driving joint and its open/closed values are in `tools.ts`). The RG2 and RG6 URDFs also have `mount_joint`: the body is the fixed part and the bracket turns against it, because a tool is drawn back from its fingertips (`ToolTilt` in `tools.ts`). `public/hande_pin_finger_*.stl`: the
+  lab's own Hand-E fingers, from `scripts/make_hande_pin_fingers.py <CAD export>`. `public/bracket_90.stl`: the 90° bracket, from `scripts/make_bracket_mesh.py <CAD export>` (`BRACKET_90` in `tools.ts` has its two dimensions). The `.glb` files in `public/` are unused (kept out of the package by `.gitignore`).
 
 ## Commands
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fk, ik, nearest, restingSolution, toolDown, READY, elbowUp, type Joints } from '../src/lib/kinematics';
 import { approxEqual, chain, fromPose, multiply, rotZ, rpyXyz, toPose, type Mat4 } from '../src/lib/mat4';
-import { ROBOTS, ROBOT_IDS } from '../src/lib/robots';
+import { ROBOTS, ROBOT_IDS, paintOf } from '../src/lib/robots';
 
 // Forward kinematics straight from each URDF's joint table (the chain urdf-loader poses on screen),
 // so the DH numbers in robots.ts are checked against what is drawn.
@@ -106,5 +106,27 @@ describe('inverse kinematics', () => {
   it('converts URScript poses both ways', () => {
     const pose = [0.1, -0.2, 0.3, 2.2, -2.2, 0.1];
     toPose(fromPose(pose)).forEach((v, i) => expect(v).toBeCloseTo(pose[i], 6));
+  });
+});
+
+describe('the CB3 arms', () => {
+  it('are drawn in the e-Series paint: their meshes come about half as bright', () => {
+    for (const id of ROBOT_IDS) expect(!!ROBOTS[id].repaint, id).toBe(!id.endsWith('e'));
+    // every material in ur_description's ur3, ur5 and ur10 visual meshes, by name and sRGB diffuse
+    const materials: [string, number[], string][] = [
+      ['Rohr', [0.34, 0.34, 0.34], 'link'], ['Rohr_005', [0.42, 0.42, 0.42], 'link'], ['Rohr', [0.52, 0.52, 0.52], 'link'],
+      ['Rohr_007_001', [0.21, 0.21, 0.21], 'link'], // the UR5's flange: a tube by name, dark by colour
+      ['verbindung', [0.14, 0.14, 0.14], 'joint'], ['verbindung_001', [0.11, 0.11, 0.11], 'joint'], ['verbindung', [0.18, 0.18, 0.18], 'joint'],
+      ['blau', [0.25, 0.35, 0.41], 'blue'], ['blau_001', [0.2, 0.28, 0.33], 'blue'], ['blau', [0.31, 0.43, 0.51], 'blue'],
+      ['Scheibe', [0.05, 0.05, 0.05], 'black'], ['Scheibe', [0.06, 0.06, 0.06], 'black'],
+      ['SWMaterial-1_004_002_001', [0.1, 0.1, 0.11], 'black'], ['grey_001', [0.04, 0.04, 0.04], 'black'], ['Material_002', [0, 0, 0], 'black'],
+      ['Material_001', [0.27, 0.27, 0.27], 'joint'],
+      // the UR10's are numbered, not named
+      ['SWMaterial-0', [0.22, 0.22, 0.22], 'joint'], ['SWMaterial-0_001', [0.18, 0.18, 0.18], 'joint'],
+      ['SWMaterial-1', [0.39, 0.54, 0.64], 'blue'], ['SWMaterial-1_001', [0.31, 0.43, 0.51], 'blue'],
+      ['SWMaterial-2', [0.46, 0.46, 0.46], 'link'], ['SWMaterial-2_001', [0.37, 0.37, 0.37], 'link'], ['SWMaterial-3', [0.66, 0.66, 0.66], 'link'],
+      ['SWMaterial-4', [0.08, 0.08, 0.08], 'black'],
+    ];
+    for (const [name, colour, paint] of materials) expect(paintOf(name, colour), `${name} ${colour}`).toBe(paint);
   });
 });

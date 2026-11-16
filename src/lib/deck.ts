@@ -12,6 +12,7 @@
 import { chain, fromAxisAngle, rotY, rotZ, toAxisAngle, translate, type Mat4, type Vec3 } from './mat4';
 import type { Joints } from './kinematics';
 import type { RobotModelId } from './robots';
+import { TOOLS, mountTcp, type ToolId } from './tools';
 
 export type ComponentKind = 'tray' | 'station' | 'side_rack' | 'block';
 export type Skill = 'top_down' | 'side_load';
@@ -65,7 +66,9 @@ export interface MotionConfig {
 }
 
 export interface GripperConfig {
-  type: GripperType;
+  type: GripperType;                 // how it is driven
+  model: ToolId;                     // what is on the flange (drawing only; the TCP is robot.tcp)
+  fingerAxis: 'x' | 'y';             // the TCP axis the fingers open along (drawing only)
   speed: number; force: number;      // robotiq 0-255
   pin: number; tool: boolean; closeLevel: boolean; // digital_out
 }
@@ -98,7 +101,7 @@ export const DEFAULT_MOTION: MotionConfig = {
   joint_speed: 0.6, joint_accel: 0.8, linear_speed: 0.15, linear_accel: 0.5, approach_speed: 0.04,
 };
 
-export const DEFAULT_GRIPPER: GripperConfig = { type: 'robotiq', speed: 255, force: 100, pin: 0, tool: false, closeLevel: true };
+export const DEFAULT_GRIPPER: GripperConfig = { type: 'robotiq', model: 'hand_e', fingerAxis: 'x', speed: 255, force: 100, pin: 0, tool: false, closeLevel: true };
 
 const deg = (d: number) => (d * Math.PI) / 180;
 
@@ -113,27 +116,27 @@ export interface CatalogEntry {
 
 export const CATALOG: CatalogEntry[] = [
   {
-    key: 'vial_tray', label: 'Vial tray', hint: 'rows × cols of vials, picked top-down',
+    key: 'vial_tray', label: 'Vial tray', hint: 'A flat grid, rows × columns, picked from above.',
     make: () => ({ label: 'Vial tray', kind: 'tray', yaw: 0, rows: 2, cols: 4, colPitch: 0.03, rowPitch: 0.03, approach: 0.08,
       toolYaw: 0, size: [0.15, 0.09, 0.04], gripHeight: 0.03, color: '#64748b', filled: true, z: 0.07 }),
   },
   {
-    key: 'well_plate', label: 'Well plate (SBS)', hint: 'a plate position: 1 slot, gripped on the long sides',
+    key: 'well_plate', label: 'Well plate', hint: 'One SBS plate position, gripped on the long sides.',
     make: () => ({ label: 'Plate nest', kind: 'station', yaw: 0, rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, approach: 0.06,
       toolYaw: 90, size: [0.1278, 0.0855, 0.02], gripHeight: 0.008, color: '#0ea5e9', filled: true, z: 0.028 }),
   },
   {
-    key: 'station', label: 'Station', hint: 'one top-down position: balance, capper, stirrer',
+    key: 'station', label: 'Station', hint: 'One position reached from above: a balance, capper or stirrer.',
     make: () => ({ label: 'Balance', kind: 'station', yaw: 0, rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, approach: 0.1,
       toolYaw: 0, size: [0.2, 0.3, 0.1], gripHeight: 0.03, color: '#a16207', filled: false, z: 0.13 }),
   },
   {
-    key: 'side_rack', label: 'Side-load rack', hint: 'slide in sideways along rails parallel to the bench',
-    make: () => ({ label: 'Slide rack', kind: 'side_rack', yaw: 0, rows: 3, cols: 1, colPitch: 0.04, rowPitch: 0.03, approach: 0.1,
-      toolYaw: 0, size: [0.1, 0.06, 0.12], gripHeight: 0.02, color: '#7c3aed', filled: true, z: 0.05 }),
+    key: 'side_rack', label: 'Side rack', hint: 'A vertical grid, rows × columns, loaded sideways from the side it faces.',
+    make: () => ({ label: 'Side rack', kind: 'side_rack', yaw: 0, rows: 3, cols: 2, colPitch: 0.04, rowPitch: 0.04, approach: 0.1,
+      toolYaw: 0, size: [0.06, 0.06, 0.12], gripHeight: 0.02, color: '#7c3aed', filled: true, z: 0.05 }),
   },
   {
-    key: 'block', label: 'Instrument / obstacle', hint: 'a box the arm must keep clear of (no slots)',
+    key: 'block', label: 'Instrument', hint: 'A box the arm must keep clear of. No slots.',
     make: () => ({ label: 'Instrument', kind: 'block', yaw: 0, rows: 1, cols: 1, colPitch: 0, rowPitch: 0, approach: 0,
       toolYaw: 0, size: [0.3, 0.3, 0.35], gripHeight: 0, color: '#475569', filled: false, z: 0 }),
   },
@@ -254,7 +257,7 @@ export function emptyProject(): Project {
     version: 1,
     name: 'My deck',
     className: 'MyDeckArm',
-    robot: { model: 'UR5e', tcp: [0, 0, 0.16, 0, 0, 0], payload: 1 },
+    robot: { model: 'UR5e', tcp: mountTcp(TOOLS[DEFAULT_GRIPPER.model], 'straight'), payload: 1 },
     benchZ: 0,
     gripper: { ...DEFAULT_GRIPPER },
     motion: { ...DEFAULT_MOTION },

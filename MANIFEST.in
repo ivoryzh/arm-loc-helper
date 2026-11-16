@@ -1,2 +1,2 @@
 include README.md
-recursive-include arm_loc_helper/static *.html *.urdf *.svg *.png *.css *.js
+recursive-include arm_loc_helper/static *.html *.urdf *.stl *.svg *.png *.css *.js

@@ -11,7 +11,7 @@ import { fromPose, multiply, type Mat4 } from '../../lib/mat4';
 import { ROBOTS } from '../../lib/robots';
 import { flangeToTcp, safePointTcp } from '../../lib/runtimeDeck';
 import type { Selection } from '../../state';
-import { itemKind } from '../../lib/items';
+import { itemKind, placeholderRadius } from '../../lib/items';
 import { Item } from './items';
 
 const REACH_COLOR: Record<Reach, string> = { ok: '#14b8a6', elbow_down: '#f59e0b', none: '#ef4444' };
@@ -33,32 +33,30 @@ function Body({ c, benchZ, selected }: { c: DeckComponent; benchZ: number; selec
     );
   }
   if (c.kind === 'side_rack') {
-    const width = Math.max(c.size[1], (c.cols - 1) * c.colPitch + 0.045);
-    const top = (c.rows - 1) * c.rowPitch + 0.025;
+    // A tray stood on its side: a slab behind the grip points, facing the side it is loaded from, with
+    // a socket marked for each slot. What goes in them is not the rack's to say.
+    const margin = Math.max(0.02, placeholderRadius(c) * 2.5);
+    const width = Math.max(c.size[1], (c.cols - 1) * c.colPitch + 2 * margin);
+    const top = (c.rows - 1) * c.rowPitch + margin;
     const height = top - floor;
     const cy = ((c.cols - 1) * c.colPitch) / 2;
     const depth = c.size[0];
+    const front = Math.min(0.012, depth / 2); // the slab's face, just behind the grip points
+    const socket = placeholderRadius(c) * 1.35;
     return (
       <group>
-        <mesh position={[depth, cy, floor + height / 2]} castShadow receiveShadow>
-          <boxGeometry args={[0.008, width, height]} />
+        <mesh position={[(front + depth) / 2, cy, floor + height / 2]} castShadow receiveShadow>
+          <boxGeometry args={[depth - front, width, height]} />
           {mat}
         </mesh>
-        {[-1, 1].map((side) => (
-          <mesh key={side} position={[depth / 2, cy + side * (width / 2 - 0.003), floor + height / 2]} castShadow>
-            <boxGeometry args={[depth, 0.006, height]} />
-            {mat}
-          </mesh>
-        ))}
         {Array.from({ length: slotCount(c) }, (_, i) => {
           const [, y, z] = slotOffset(c, i);
-          // two rails per slot, parallel to the bench and to the insertion axis
-          return [-1, 1].map((side) => (
-            <mesh key={`${i}${side}`} position={[depth / 2, y + side * 0.0145, z - 0.004]} rotation={[0, Math.PI / 2, 0]}>
-              <cylinderGeometry args={[0.0025, 0.0025, depth, 8]} />
-              <meshStandardMaterial color="#cbd5e1" metalness={0.6} roughness={0.3} />
+          return (
+            <mesh key={i} position={[front - 0.0005, y, z]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[socket, socket, 0.002, 20]} />
+              <meshStandardMaterial color="#0f172a" roughness={0.9} />
             </mesh>
-          ));
+          );
         })}
       </group>
     );

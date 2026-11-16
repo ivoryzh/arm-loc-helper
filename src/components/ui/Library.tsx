@@ -1,6 +1,7 @@
-// Left column: the catalog to drag onto the bench, and the deck's outline.
+// Left column: the catalog to drag onto the bench (a tile each, its description on hover), and the
+// deck's outline.
 import { Box, Diamond, FlaskConical, Grid3x3, House, LayoutPanelLeft, MapPin, Scale, Trash2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Finding } from '../../lib/checks';
 import { CATALOG, slotCount, type ComponentKind } from '../../lib/deck';
 import { useStore } from '../../state';
@@ -27,22 +28,35 @@ export function Library({ onAdd, findings }: { onAdd: (key: string) => void; fin
   const { project, selection, select, update } = useStore();
   const count = (id: string) => findings.filter((f) => f.target === id && f.level !== 'tip').length;
   const cards = [...CATALOG.map((e) => ({ key: e.key, label: e.label, hint: e.hint })),
-    { key: 'safe_point', label: 'Safe point', hint: 'free space the arm travels through between stations' }];
+    { key: 'safe_point', label: 'Safe point', hint: 'Free space the arm travels through between stations.' }];
+  // the hint floats beside the tile, fixed to the window so the column's scrolling does not clip it
+  const [tip, setTip] = useState<{ key: string; hint: string; left: number; top: number } | null>(null);
+  const showTip = (key: string, hint: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const beside = r.right + 8 + 230 < window.innerWidth;
+    setTip({ key, hint, left: beside ? r.right + 8 : Math.max(8, r.left), top: beside ? r.top : r.bottom + 6 });
+  };
 
   return (
     <aside className="column left">
       <div className="panel-title">Components</div>
-      <p className="muted small">Drag onto the bench, or click to add.</p>
       <div className="catalog">
         {cards.map((c) => (
-          <button key={c.key} className="card" draggable title={c.hint}
-            onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, c.key); e.dataTransfer.effectAllowed = 'copy'; }}
+          <button key={c.key} className="card" draggable aria-describedby={tip?.key === c.key ? 'catalog-tip' : undefined}
+            onMouseEnter={(e) => showTip(c.key, c.hint, e.currentTarget)} onMouseLeave={() => setTip(null)}
+            onFocus={(e) => showTip(c.key, c.hint, e.currentTarget)} onBlur={() => setTip(null)}
+            onDragStart={(e) => { setTip(null); e.dataTransfer.setData(DRAG_TYPE, c.key); e.dataTransfer.effectAllowed = 'copy'; }}
             onClick={() => onAdd(c.key)}>
             <span className="card-icon">{CARD_ICON[c.key]}</span>
-            <span className="card-text"><strong>{c.label}</strong><span>{c.hint}</span></span>
+            <strong>{c.label}</strong>
           </button>
         ))}
       </div>
+      {tip && (
+        <div id="catalog-tip" role="tooltip" className="tooltip" style={{ left: tip.left, top: tip.top }}>
+          {tip.hint}<span className="tooltip-how">Drag onto the bench, or click to add.</span>
+        </div>
+      )}
 
       <div className="panel-title">Deck <span className="muted">{project.components.length + project.safePoints.length}</span></div>
       <ul className="outline">

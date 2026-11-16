@@ -19,8 +19,13 @@ Universal Robots arms come first (UR3, UR5, UR10 and their e-series), driven thr
 
 ## What it does
 
-1. **Pick the arm and its TCP** (the gripper's fingertips, as on the pendant). Poses are TCP poses
-   in the robot's base frame, the frame URScript and the pendant use.
+1. **Pick the arm, its end effector and its TCP** (the gripper's fingertips, as on the pendant).
+   Poses are TCP poses in the robot's base frame, the frame URScript and the pendant use. The end
+   effector (Robotiq Hand-E with standard or pin fingers, 2F-85 or 2F-140, or OnRobot RG2 or RG6) and its mount (straight, or on
+   a 90° bracket) fill in a nominal TCP and draw the gripper on the arm; a TCP typed in or read from
+   a script always wins. The RG2 and RG6 bolt to their own bracket straight or turned 90°, so their 90° mount is that and
+   adds no bracket, and their fingers always open along the axis they turn about. *Fingers open along* turns the drawn gripper a quarter turn about its own
+   axis, for one bolted on that way (as on the 90° bracket).
 2. **Import a `.script`** saved by Polyscope. Its waypoints (`Waypoint_1_p` and `Waypoint_1_q` become
    one waypoint), its `set_tcp(...)` and the order of its moves show up on the deck. Click a
    waypoint to build a tray, station, rack or safe point on it.
@@ -28,8 +33,9 @@ Universal Robots arms come first (UR3, UR5, UR10 and their e-series), driven thr
    **skill**, the way the arm goes in and out of it:
    - **Top-down** (trays, plates, balances, cappers): the tool points straight down, and the arm goes
      in and out vertically. That covers almost all lab pick-and-place.
-   - **Side-load** (a slide or plate rack with rails parallel to the bench, a hotel, a drawer): the
-     tool is horizontal, and the arm goes in and out along the rack's axis.
+   - **Side-load** (a rack that stands up: a grid of rows × columns holding slides, plates, tubes,
+     a hotel, a drawer): the tool is horizontal, and the arm goes in and out along the rack's axis.
+     Its slots are drawn as dots, since a rack does not say what it holds.
 4. **Place safe points and link them.** The arm travels between stations only through safe points:
    safe point → the station's safe point → approach point → slot, and back out the same way. With
    three safe points, any location can reach any other along a path you laid out.
@@ -145,8 +151,29 @@ uv venv && uv pip install -e ".[test]"
 | `src/components/` | The 3D scene (react-three-fiber) and the panels |
 
 The URDFs are ros-industrial's; the meshes load from jsDelivr, so the repository holds only the text
-files. `scripts/make_e_series_urdf.py` writes the UR5e and UR10e URDFs from the UR3e one, using the
+files. Its CB3 meshes (UR3, UR5, UR10) come about half as bright as its e-Series ones, so they are
+repainted in the e-Series' colours as they load (`PAINT` in `src/lib/robots.ts`). `scripts/make_e_series_urdf.py` writes the UR5e and UR10e URDFs from the UR3e one, using the
 numbers in ur_description's config.
+
+The gripper URDFs (`public/robotiq_*.urdf`, `public/onrobot_rg*.urdf`) are the visuals and joints of
+three open descriptions, written out as plain URDF: the 2F-85 and 2F-140 from PickNik's
+[`robotiq_description`](https://github.com/PickNikRobotics/ros2_robotiq_gripper) (BSD-3-Clause),
+the Hand-E from [`robotiq_hande_description`](https://github.com/AGH-CEAI/robotiq_hande_description)
+(Apache-2.0), and the RG2 (v1) and RG6 (v2) from [`onrobot1_ros`](https://github.com/libishm1/onrobot1_ros) (MIT,
+after ikalevatykh's `onrobot_ros`). Their meshes also load from jsDelivr, pinned to a commit (`TOOL_PACKAGES` in
+`src/lib/tools.ts`); until they arrive, or if they do not, the arm carries a stand-in of boxes.
+
+*Robotiq Hand-E, pin fingers* swaps the standard fingertips for the lab's own: fingers with bosses
+that hold pins, for a gripper on the 90° bracket to pick from above with the wrist pointing down.
+It is the only tool drawn with pins; on the others the 90° bracket's TCP is on the gripper's own axis.
+Its two meshes (`public/hande_pin_finger_*.stl`) are in the repository, written by
+`scripts/make_hande_pin_fingers.py` from the CAD export; the pins are fixed in the bosses, gripping
+38.5 mm from the gripper's axis, and turn with the gripper.
+
+The 90° bracket is the lab's own too (`public/bracket_90.stl`, written by `scripts/make_bracket_mesh.py`
+from its CAD export): it bolts to the flange's 50 mm bolt circle and holds the gripper 42.5 mm out from
+the flange's axis, with the gripper's axis 38.5 mm from the flange's face. The 90° preset is sized from
+it. A typed TCP that the bracket could not hold (a gripper hung lower, say) gets a stand-in L of boxes.
 
 ### Another robot
 

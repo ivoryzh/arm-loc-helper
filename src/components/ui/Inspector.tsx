@@ -6,6 +6,7 @@ import {
   type DeckComponent, type GripperType, type Project, type SafePointDef,
 } from '../../lib/deck';
 import { ROBOTS, ROBOT_IDS, type RobotModelId } from '../../lib/robots';
+import { MOUNT_FINGER_AXIS, TOOLS, TOOL_IDS, mountLabel, mountOf, mountTcp, type MountId, type ToolId } from '../../lib/tools';
 import { anchorTo, componentFromWaypoint, safePointFromWaypoint, waypointMatrix } from '../../lib/teach';
 import { useStore } from '../../state';
 import { NumberField, Row, Section, SelectField, TextField, Toggle } from './fields';
@@ -13,6 +14,7 @@ import { NumberField, Row, Section, SelectField, TextField, Toggle } from './fie
 const MM = { scale: 1000, unit: 'mm', digits: 1 };
 const DEG = { unit: '°', digits: 2 };
 const RAD_AS_DEG = { scale: 180 / Math.PI, unit: '°', digits: 2 };
+const TCP_HINT = "The gripper's fingertips from the flange, as on the pendant (Installation › TCP)";
 
 export function Inspector({ previewSlot, setPreviewSlot }: { previewSlot: number; setPreviewSlot: (n: number) => void }) {
   const { project, selection } = useStore();
@@ -73,7 +75,8 @@ function ComponentInspector({ c, previewSlot, setPreviewSlot }: { c: DeckCompone
           {c.kind !== 'block' && <NumberField label="Z" value={c.z} onChange={(v) => set({ z: v }, 'z')} {...MM} />}
         </Row>
         <Row>
-          <NumberField label="Turn" value={c.yaw} onChange={(v) => set({ yaw: v }, 'yaw')} {...DEG} title="The component's rotation about the base z axis" />
+          <NumberField label={skill === 'side_load' ? 'Facing' : 'Turn'} value={c.yaw} onChange={(v) => set({ yaw: v }, 'yaw')} {...DEG}
+            title={skill === 'side_load' ? 'The way items go in, as an angle about the base z axis (0° = along +X)' : "The component's rotation about the base z axis"} />
           {skill && <NumberField label={skill === 'side_load' ? 'Tool roll' : 'Tool yaw'} value={c.toolYaw} onChange={(v) => set({ toolYaw: v }, 'toolYaw')} {...DEG}
             title="The gripper's turn about its own axis, relative to the component" />}
         </Row>
@@ -82,14 +85,14 @@ function ComponentInspector({ c, previewSlot, setPreviewSlot }: { c: DeckCompone
       {(c.kind === 'tray' || c.kind === 'side_rack') && (
         <Section title="Slots">
           <Row>
-            <NumberField label={c.kind === 'tray' ? 'Rows' : 'Levels'} value={c.rows} integer min={1} max={64} onChange={(v) => set({ rows: v }, 'rows')} />
-            <NumberField label={c.kind === 'tray' ? 'Columns' : 'Across'} value={c.cols} integer min={1} max={64} onChange={(v) => set({ cols: v }, 'cols')} />
+            <NumberField label="Rows" value={c.rows} integer min={1} max={64} onChange={(v) => set({ rows: v }, 'rows')} />
+            <NumberField label="Columns" value={c.cols} integer min={1} max={64} onChange={(v) => set({ cols: v }, 'cols')} />
           </Row>
           <Row>
-            <NumberField label={c.kind === 'tray' ? 'Column pitch' : 'Across pitch'} value={c.colPitch} onChange={(v) => set({ colPitch: v }, 'colPitch')} {...MM} />
-            <NumberField label={c.kind === 'tray' ? 'Row pitch' : 'Level pitch'} value={c.rowPitch} onChange={(v) => set({ rowPitch: v }, 'rowPitch')} {...MM} />
+            <NumberField label="Column pitch" value={c.colPitch} onChange={(v) => set({ colPitch: v }, 'colPitch')} {...MM} />
+            <NumberField label="Row pitch" value={c.rowPitch} onChange={(v) => set({ rowPitch: v }, 'rowPitch')} {...MM} />
           </Row>
-          <p className="muted small">{c.kind === 'tray' ? 'Slot index goes row by row: slot = row × columns + column.' : 'Slot 0 is the bottom level; slot = level × across + position.'}</p>
+          <p className="muted small">{c.kind === 'tray' ? 'Slot index goes row by row: slot = row × columns + column.' : 'Rows go up from slot 0 at the bottom: slot = row × columns + column.'}</p>
         </Section>
       )}
 
@@ -263,6 +266,7 @@ function DeckSettings() {
   const g = p.gripper;
   const grip = (change: Partial<Project['gripper']>) => set((q) => ({ ...q, gripper: { ...q.gripper, ...change } }), 'gripper');
   const autoClass = className(p.name);
+  const mount = mountOf(tcp, TOOLS[g.model]);
 
   return (
     <div className="inspector">
@@ -275,20 +279,39 @@ function DeckSettings() {
       <Section title="Arm">
         <SelectField<RobotModelId> label="Model" value={p.robot.model} onChange={(v) => set((q) => ({ ...q, robot: { ...q.robot, model: v } }))}
           options={ROBOT_IDS.map((id) => ({ value: id, label: `${ROBOTS[id].label} · ${ROBOTS[id].reach * 1000} mm reach` }))} />
-        <p className="muted small">TCP: the gripper's fingertips from the flange, as on the pendant (Installation › TCP).</p>
-        <Row>
-          <NumberField label="TCP X" value={tcp[0]} onChange={(v) => setTcp(0, v)} {...MM} />
-          <NumberField label="TCP Y" value={tcp[1]} onChange={(v) => setTcp(1, v)} {...MM} />
-          <NumberField label="TCP Z" value={tcp[2]} onChange={(v) => setTcp(2, v)} {...MM} />
-        </Row>
-        <Row>
-          <NumberField label="RX" value={tcp[3]} onChange={(v) => setTcp(3, v)} {...RAD_AS_DEG} />
-          <NumberField label="RY" value={tcp[4]} onChange={(v) => setTcp(4, v)} {...RAD_AS_DEG} />
-          <NumberField label="RZ" value={tcp[5]} onChange={(v) => setTcp(5, v)} {...RAD_AS_DEG} />
-        </Row>
         <NumberField label="Payload" value={p.robot.payload} min={0} onChange={(v) => set((q) => ({ ...q, robot: { ...q.robot, payload: v } }), 'payload')} unit="kg" digits={2} />
       </Section>
-      <Section title="Gripper">
+      <Section title="End effector">
+        <SelectField<ToolId> label="Model" value={g.model} options={TOOL_IDS.map((id) => ({ value: id, label: TOOLS[id].label }))}
+          onChange={(v) => set((q) => {
+            // a TCP that was a preset follows the new tool; one typed in by hand stays
+            const was = mountOf(q.robot.tcp, TOOLS[q.gripper.model]);
+            return { ...q, gripper: { ...q.gripper, model: v }, robot: was === 'custom' ? q.robot : { ...q.robot, tcp: mountTcp(TOOLS[v], was) } };
+          })} />
+        <SelectField<MountId | 'custom'> label="Mount" value={mount}
+          options={[...(['straight', 'right_angle'] as const).map((m) => ({ value: m, label: mountLabel(TOOLS[g.model], m) })),
+            ...(mount === 'custom' ? [{ value: 'custom' as const, label: 'Custom (the TCP below)' }] : [])]}
+          onChange={(v) => {
+            if (v !== 'custom') set((q) => ({ ...q, robot: { ...q.robot, tcp: mountTcp(TOOLS[q.gripper.model], v) }, gripper: { ...q.gripper, fingerAxis: MOUNT_FINGER_AXIS[v] } }));
+          }} />
+        {/* a tool that tilts on its own bracket opens along its tilt axis: nothing to choose */}
+        {!TOOLS[g.model].tilt && (
+          <SelectField<'x' | 'y'> label="Fingers open along" value={g.fingerAxis ?? 'x'} onChange={(v) => grip({ fingerAxis: v })}
+            options={[{ value: 'x', label: 'Tool X' }, { value: 'y', label: 'Tool Y (turned 90°)' }]} />
+        )}
+        <Row>
+          <NumberField label="TCP X" value={tcp[0]} onChange={(v) => setTcp(0, v)} {...MM} title={TCP_HINT} />
+          <NumberField label="TCP Y" value={tcp[1]} onChange={(v) => setTcp(1, v)} {...MM} title={TCP_HINT} />
+          <NumberField label="TCP Z" value={tcp[2]} onChange={(v) => setTcp(2, v)} {...MM} title={TCP_HINT} />
+        </Row>
+        <Row>
+          <NumberField label="RX" value={tcp[3]} onChange={(v) => setTcp(3, v)} {...RAD_AS_DEG} title={TCP_HINT} />
+          <NumberField label="RY" value={tcp[4]} onChange={(v) => setTcp(4, v)} {...RAD_AS_DEG} title={TCP_HINT} />
+          <NumberField label="RZ" value={tcp[5]} onChange={(v) => setTcp(5, v)} {...RAD_AS_DEG} title={TCP_HINT} />
+        </Row>
+        <p className="muted small">Presets are nominal. Enter the TCP from your pendant.</p>
+      </Section>
+      <Section title="Gripper control">
         <SelectField<GripperType> label="Type" value={g.type} onChange={(v) => grip({ type: v })} options={[
           { value: 'robotiq', label: 'Robotiq 2F / Hand-E (URCap socket)' },
           { value: 'digital_out', label: 'Digital output (pneumatic, tool I/O)' },
