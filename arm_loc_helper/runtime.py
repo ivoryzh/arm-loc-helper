@@ -207,6 +207,9 @@ class URDriver:
 # -------------------------------------------------------------------------------------- grippers
 # A gripper needs open() and close(). close() may return False when it closed on nothing
 # (a pick then raises GraspError), True when it holds something, or None when it cannot tell.
+# It may also have open_to(percent), to open part-way: 100 is fully open, 0 closed. A location's
+# `open` asks for that, so the fingers stay out of the items next to the one being picked. A gripper
+# without open_to opens fully.
 
 
 class SimGripper:
@@ -222,6 +225,11 @@ class SimGripper:
         self.is_open = True
         if self._echo:
             self._echo("  gripper.open()")
+
+    def open_to(self, percent: float) -> None:
+        self.is_open = True
+        if self._echo:
+            self._echo(f"  gripper.open_to({percent:g}%)")
 
     def close(self) -> Optional[bool]:
         self.is_open = False
@@ -290,6 +298,11 @@ class RobotiqGripper:
 
     def open(self) -> None:
         self.move(self.open_position)
+
+    def open_to(self, percent: float) -> None:
+        """Open part-way: 100 is `open_position`, 0 is `closed_position`, evenly in between."""
+        k = max(0.0, min(100.0, float(percent))) / 100.0
+        self.move(round(self.closed_position + (self.open_position - self.closed_position) * k))
 
     def close(self) -> Optional[bool]:
         return self.move(self.closed_position) == 2
@@ -360,7 +373,8 @@ class SafePoint:
 
 
 class Location:
-    """One place on the deck: its slots (TCP poses), the approach offset, and its safe point."""
+    """One place on the deck: its slots (TCP poses), the approach offset, its safe point, and how
+    far the gripper opens there (% of its stroke; 100, fully, unless the deck says less)."""
 
     def __init__(self, name: str, data: Dict[str, Any]):
         self.name = name
@@ -371,6 +385,9 @@ class Location:
             raise ValueError(f"location {name} has no slots")
         self.approach: List[float] = _floats(data.get("approach", [0.0, 0.0, 0.05]), 3, f"{name}.approach")
         self.safe_point: str = data["safe_point"]
+        self.open: float = float(data.get("open", 100.0))
+        if not 0.0 <= self.open <= 100.0:
+            raise ValueError(f"{name}.open is a percentage, 0 to 100, not {self.open:g}")
         self.grid: Optional[Dict[str, int]] = data.get("grid")
 
     def slot(self, index: int) -> Pose:
@@ -590,19 +607,20 @@ class ArmController:
             first = self._plan("pick", state, location, index)
             return first + self._plan("place", first[-1][1], destination, destination_index)
         steps, state = self._to_approach(state, location, index)
+        opening = {"kind": "gripper", "name": "open", "target": None, "slow": False, "percent": self._location(location).open}
         if action == "move_above":
             return steps
         if action == "move_to":
             return steps + [self._into(location, index, state)]
         if action == "pick":
-            return steps + [({"kind": "gripper", "name": "open", "target": None, "slow": False}, state),
+            return steps + [(opening, state),
                             self._into(location, index, state),
                             ({"kind": "gripper", "name": "close", "target": None, "slow": False}, ("loc", location, int(index), True)),
                             self._out(location, index)]
         if action == "place":
             down = self._into(location, index, state)
             return steps + [down,
-                            ({"kind": "gripper", "name": "open", "target": None, "slow": False}, down[1]),
+                            (opening, down[1]),
                             self._out(location, index)]
         raise ValueError(f"unknown action {action!r}")
 
@@ -632,7 +650,7 @@ class ArmController:
                     self.driver.move_linear(step["target"], v * k, m["linear_accel"] * k)
                 elif kind == "gripper":
                     if step["name"] == "open":
-                        self.gripper.open()
+                        self._open(step.get("percent", 100.0))
                         self.holding = None
                     else:
                         held = self.gripper.close()
@@ -682,9 +700,16 @@ class ArmController:
         self._act(f"transfer({source!r}, {destination!r}, {source_index}, {destination_index})",
                   "transfer", source, source_index, destination, destination_index)
 
-    def open_gripper(self) -> None:
-        """Open the gripper where the arm is (drops what it holds)."""
-        self.gripper.open()
+    def _open(self, percent: float = 100.0) -> None:
+        part_way = getattr(self.gripper, "open_to", None)
+        if percent < 100.0 and part_way is not None:
+            part_way(percent)
+        else:
+            self.gripper.open()
+
+    def open_gripper(self, percent: float = 100.0) -> None:
+        """Open the gripper where the arm is (drops what it holds). percent: how far, 100 fully."""
+        self._open(percent)
         self.holding = None
 
     def close_gripper(self) -> None:

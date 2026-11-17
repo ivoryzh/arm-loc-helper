@@ -44,7 +44,7 @@ IvoryOS also picks up as an instrument.
 - `public/*.urdf`: ros-industrial URDFs; `scripts/make_e_series_urdf.py` derives UR5e/UR10e from
   UR3e. `public/robotiq_*.urdf`, `public/onrobot_rg*.urdf`: the grippers (root on the flange, z out, fingers opening along x;
   the driving joint and its open/closed values are in `tools.ts`). The RG2 and RG6 URDFs also have `mount_joint`: the body is the fixed part and the bracket turns against it, because a tool is drawn back from its fingertips (`ToolTilt` in `tools.ts`). `public/hande_pin_finger_*.stl`: the
-  lab's own Hand-E fingers, from `scripts/make_hande_pin_fingers.py <CAD export>`. `public/bracket_90.stl`: the 90° bracket, from `scripts/make_bracket_mesh.py <CAD export>` (`BRACKET_90` in `tools.ts` has its two dimensions). The `.glb` files in `public/` are unused (kept out of the package by `.gitignore`).
+  lab's own Hand-E fingers, from `scripts/make_hande_pin_fingers.py <CAD export>`. A skill poses the tool's grip frame, not its TCP frame (`gripFrame` in `tools.ts`, `gripOf` in `deck.ts`): they are the same but for pin fingers out at their pins, which grip along the pins. Slot and safe-point poses, the tilt check and the drawn items all go through it. A component's `openTo` (% of the stroke, 100 fully open) is exported as the location's `open`, carried on the plan's open steps as `percent` on both sides (`planner.ts`, `runtime.py`), and reaches a gripper as `open_to(percent)`. `public/bracket_90.stl`: the 90° bracket, from `scripts/make_bracket_mesh.py <CAD export>` (`BRACKET_90` in `tools.ts` has its two dimensions). The `.glb` files in `public/` are unused (kept out of the package by `.gitignore`).
 
 ## Commands
 

@@ -1,16 +1,17 @@
 // The arm: the ros-industrial URDF (meshes from the CDN), the chosen end effector drawn back from
 // the TCP with whatever holds it to the flange (a spacer, a 90° bracket), and what it carries.
 // Joints and the gripper's opening come from the store's arm view every frame.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import URDFLoader, { type URDFRobot } from 'urdf-loader';
-import type { Project } from '../../lib/deck';
+import { gripOf, type Project } from '../../lib/deck';
+import { itemWidth } from '../../lib/items';
 import type { Joints } from '../../lib/kinematics';
 import { fromPose } from '../../lib/mat4';
 import { JOINT_NAMES, MESH_CDN, PAINT, ROBOTS, paintOf } from '../../lib/robots';
-import { BRACKET_90, FLANGE_RADIUS, PLATE, TOOLS, TOOL_PACKAGES, fingerAxisOf, fingerJoint, placeTool, type FingerRods, type MountShape, type ToolModel } from '../../lib/tools';
+import { BRACKET_90, FLANGE_RADIUS, PLATE, TOOLS, TOOL_PACKAGES, closedGap, fingerAxisOf, fingerJoint, placeTool, type FingerRods, type MountShape, type ToolModel } from '../../lib/tools';
 import { useStore } from '../../state';
 import { Item } from './items';
 
@@ -66,14 +67,12 @@ function useRobot(urdf: string, repaint = false): URDFRobot | null {
   return robot;
 }
 
-/** The 4x4 (row-major) TCP offset as a three.js matrix. */
-function tcpMatrix(tcp: number[]): THREE.Matrix4 {
-  const m = fromPose(tcp);
+/** A 4x4 (row-major) as a three.js matrix. */
+function toThree(m: number[]): THREE.Matrix4 {
   return new THREE.Matrix4().set(...(m as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number]));
 }
 
 const BLACK = '#1f2937', STEEL = '#9ca3af', TEAL = '#5eb8b0';
-const CLOSED_GAP = 0.012;
 
 /** A cylinder along z from z0 to z1. */
 function Rod({ r, z0, z1, color, metal = 0.3 }: { r: number; z0: number; z1: number; color: string; metal?: number }) {
@@ -133,8 +132,7 @@ function useToolModel(tool: ToolModel): URDFRobot | null {
  * The end effector in the TCP's frame: fingertips at the origin, its body back along -z, fingers
  * opening along x. The tool's meshes when it has them and they are in, a stand-in of boxes if not.
  */
-function Gripper({ tool, length, tilt }: { tool: ToolModel; length: number; tilt: number }) {
-  const { arm } = useStore();
+function Gripper({ tool, length, tilt, gapNow }: { tool: ToolModel; length: number; tilt: number; gapNow: () => number }) {
   const model = useToolModel(tool);
   const pads = [useRef<THREE.Mesh>(null), useRef<THREE.Mesh>(null)];
   const links = [useRef<THREE.Mesh>(null), useRef<THREE.Mesh>(null)];
@@ -144,7 +142,7 @@ function Gripper({ tool, length, tilt }: { tool: ToolModel; length: number; tilt
   const knuckle = 0.03;                                          // where a 2F's links leave the palm
 
   useFrame(() => {
-    const gap = CLOSED_GAP + (tool.stroke - CLOSED_GAP) * arm.current.grip;
+    const gap = gapNow();
     if (model) {
       model.joints[tool.model!.joint]?.setJointValue(fingerJoint(tool, gap)!);
       if (tool.tilt) model.joints[tool.tilt.joint]?.setJointValue(tilt);
@@ -205,15 +203,14 @@ function Gripper({ tool, length, tilt }: { tool: ToolModel; length: number; tilt
  * opening along x. They are part of the gripper: they stick out of the fingers' bosses along -y and
  * turn with it, wherever the TCP is.
  */
-function Pins({ tool, rods }: { tool: ToolModel; rods: FingerRods }) {
-  const { arm } = useStore();
+function Pins({ tool, rods, gapNow }: { tool: ToolModel; rods: FingerRods; gapNow: () => number }) {
   const pins = useRef<(THREE.Mesh | null)[]>([]);
   const places = useMemo(() => [1, -1].flatMap((side) => rods.back.map((back) => ({ side, back }))), [rods]);
   const length = rods.reach + rods.past - rods.from;
   const y = -(rods.from + length / 2);
 
   useFrame(() => {
-    const gap = CLOSED_GAP + (tool.stroke - CLOSED_GAP) * arm.current.grip;
+    const gap = gapNow();
     places.forEach(({ side, back }, i) => pins.current[i]?.position.set(side * (gap / 2 + rods.offset), y, -back));
   });
 
@@ -305,11 +302,21 @@ export function RobotArm({ project, home }: { project: Project; home: Joints | n
   const { arm } = useStore();
   const [carrying, setCarrying] = useState<string | null>(null);
   const tool = TOOLS[project.gripper.model];
-  const tcp = useMemo(() => tcpMatrix(project.robot.tcp), [project.robot.tcp]);
+  const tcp = useMemo(() => toThree(fromPose(project.robot.tcp)), [project.robot.tcp]);
   const fingerAxis = useMemo(() => fingerAxisOf(project.robot.tcp, tool, project.gripper.fingerAxis), [project.robot.tcp, tool, project.gripper.fingerAxis]);
   const placed = useMemo(() => placeTool(project.robot.tcp, tool, fingerAxis), [project.robot.tcp, tool, fingerAxis]);
   const carriedComponent = project.components.find((c) => c.id === carrying);
   const turn = fingerAxis === 'y' ? Math.PI / 2 : 0;
+  // what the tool holds sits in its grip frame: at the TCP, along the gripper or along its pins
+  const grip = useMemo(() => toThree(gripOf(project)), [project]);
+  const byPins = useMemo(() => gripOf(project)[0] !== 1, [project]);
+  // the finger gap this frame: as far open as it is told, but no further closed than what it is
+  // closing on or holding lets it
+  const gapNow = useCallback(() => {
+    const a = arm.current;
+    const held = project.components.find((c) => c.id === (a.carrying ?? a.closingOn));
+    return Math.max(closedGap(tool, held ? itemWidth(held) : null, byPins), tool.stroke * a.grip);
+  }, [arm, project, tool, byPins]);
 
   useFrame((_, dt) => {
     const a = arm.current;
@@ -335,14 +342,18 @@ export function RobotArm({ project, home }: { project: Project; home: Joints | n
           <group matrixAutoUpdate={false} matrix={tcp}>
             {/* the gripper may be bolted on a quarter turn about its own axis from the TCP's frame */}
             <group position={placed.tip} rotation={[0, 0, turn]}>
-              <Gripper tool={tool} length={placed.length} tilt={placed.tilt} />
-              {tool.rods && <Pins tool={tool} rods={tool.rods} />}
+              <Gripper tool={tool} length={placed.length} tilt={placed.tilt} gapNow={gapNow} />
+              {tool.rods && <Pins tool={tool} rods={tool.rods} gapNow={gapNow} />}
             </group>
             <mesh>
               <sphereGeometry args={[0.006, 12, 12]} />
               <meshBasicMaterial color="#06b6d4" />
             </mesh>
-            {carriedComponent && <Item c={carriedComponent} />}
+            {carriedComponent && (
+              <group matrixAutoUpdate={false} matrix={grip}>
+                <Item c={carriedComponent} />
+              </group>
+            )}
           </group>
         </group>,
         tool0,

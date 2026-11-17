@@ -43,6 +43,7 @@ export function normalizeProject(raw: unknown): Project {
       toolYaw: num(c.toolYaw, d.toolYaw), safePoint: str(c.safePoint, ''), size: (nums(c.size, 3) ?? d.size) as DeckComponent['size'],
       gripHeight: num(c.gripHeight, d.gripHeight), taught: nums(c.taught, 3) as DeckComponent['taught'],
       taughtFrom: typeof c.taughtFrom === 'string' ? c.taughtFrom : undefined, color: str(c.color, d.color),
+      openTo: Math.max(0, Math.min(100, num(c.openTo, 100))),
       filled: typeof c.filled === 'boolean' ? c.filled : d.filled,
     };
   });

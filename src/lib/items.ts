@@ -15,6 +15,15 @@ export function vialRadius(c: DeckComponent): number {
   return Math.max(0.004, Math.min(0.011, pitch * 0.36));
 }
 
+/** How wide an item is where the fingers close on it. */
+export function itemWidth(c: DeckComponent): number | null {
+  const kind = itemKind(c);
+  if (kind === 'vial') return 2 * vialRadius(c);
+  if (kind === 'plate') return 0.0855; // an SBS plate, held across its short side
+  if (kind === 'placeholder') return 2 * placeholderRadius(c);
+  return null;
+}
+
 /** The dot that stands for an item in a side rack: sized to its slots, never more than a marble. */
 export function placeholderRadius(c: DeckComponent): number {
   const pitch = Math.min(c.cols > 1 ? c.colPitch : 1, c.rows > 1 ? c.rowPitch : 1);

@@ -2,13 +2,15 @@
 // work but are likely not what was meant (warnings), and habits that make a deck easier to run
 // (tips). Most come with a one-click fix.
 import {
-  approachMatrix, linksOf, nearestSafePoint, skillOf, slotCount, slotMatrix, tiltFromSkill,
+  approachMatrix, gripOf, linksOf, nearestSafePoint, skillOf, slotCount, slotMatrix, slotRotation, tiltFromSkill,
   type DeckComponent, type Project,
 } from './deck';
+import { itemKind, itemWidth } from './items';
 import { ik, elbowUp } from './kinematics';
-import type { Mat4 } from './mat4';
+import { column, type Mat4 } from './mat4';
 import { ROBOTS } from './robots';
 import { safePointTcp, tcpToFlange } from './runtimeDeck';
+import { TOOLS, closedGap, fingerAxisOf } from './tools';
 
 export type Level = 'error' | 'warning' | 'tip';
 
@@ -39,9 +41,44 @@ export interface ComponentReach { slots: Reach[]; approaches: Reach[] }
 export function componentReach(p: Project, c: DeckComponent): ComponentReach {
   const n = slotCount(c);
   return {
-    slots: Array.from({ length: n }, (_, i) => reach(p, slotMatrix(c, i))),
-    approaches: Array.from({ length: n }, (_, i) => reach(p, approachMatrix(c, i))),
+    slots: Array.from({ length: n }, (_, i) => reach(p, slotMatrix(c, i, p))),
+    approaches: Array.from({ length: n }, (_, i) => reach(p, approachMatrix(c, i, p))),
   };
+}
+
+/**
+ * What the fingers have to open to at a component, and what they may: `need` is the gap that just
+ * holds its item, `limit` the gap at which they reach the next item along the way they open (a tray
+ * of vials; null when nothing is that way). The limit takes the fingers as having no thickness of
+ * their own (pins: as they are), so a real gripper is into the next item a little sooner.
+ */
+export function openRange(p: Project, c: DeckComponent): { need: number; limit: number | null; stroke: number } | null {
+  const width = itemWidth(c);
+  if (width == null) return null;
+  const tool = TOOLS[p.gripper.model];
+  const grip = gripOf(p), byPins = grip[0] !== 1;
+  const need = closedGap(tool, width, byPins);
+  let limit: number | null = null;
+  if (c.kind === 'tray' && itemKind(c) === 'vial') {
+    // the way the fingers open, in the tray's own frame
+    const along: number[] = byPins ? column(grip, 1) : fingerAxisOf(p.robot.tcp, tool, p.gripper.fingerAxis) === 'y' ? [0, 1, 0] : [1, 0, 0];
+    const r = slotRotation(c, p);
+    const bx = r[0] * along[0] + r[1] * along[1] + r[2] * along[2], by = r[4] * along[0] + r[5] * along[1] + r[6] * along[2];
+    const a = (c.yaw * Math.PI) / 180, flat = Math.hypot(bx, by);
+    if (flat > 0.9) {
+      const fx = (Math.cos(a) * bx + Math.sin(a) * by) / flat, fy = (-Math.sin(a) * bx + Math.cos(a) * by) / flat;
+      const extra = byPins && tool.rods ? tool.rods.offset + tool.rods.radius : 0; // a pin's far side, out from the finger's face
+      for (const i of c.cols > 1 ? [-1, 0, 1] : [0]) for (const j of c.rows > 1 ? [-1, 0, 1] : [0]) {
+        if (!i && !j) continue;
+        const nx = i * c.colPitch, ny = j * c.rowPitch;
+        const ahead = Math.abs(nx * fx + ny * fy), aside = Math.abs(nx * fy - ny * fx);
+        if (aside >= width / 2) continue; // that one is not in the fingers' way
+        const edge = ahead - Math.sqrt((width / 2) ** 2 - aside ** 2);
+        limit = Math.min(limit ?? Infinity, Math.max(0, 2 * (edge - extra)));
+      }
+    }
+  }
+  return { need, limit, stroke: tool.stroke };
 }
 
 const mm = (m: number) => `${Math.round(m * 1000)} mm`;
@@ -114,7 +151,31 @@ export function checkProject(p: Project): Finding[] {
       out.push({ level: 'warning', target: c.id, title: `${name} needs the elbow down`, detail: 'The arm can only get there with its elbow below the shoulder, where it sweeps low over the bench. Move it closer, or higher.' });
     }
 
-    const tilt = tiltFromSkill(c);
+    // how far the gripper opens here: wide enough for the item, not so wide it is into the next one
+    const range = openRange(p, c);
+    if (range) {
+      const { need, limit, stroke } = range;
+      const gap = (stroke * c.openTo) / 100;
+      const pct = (g: number) => Math.round((g / stroke) * 100);
+      const room = limit != null && need + 0.003 < limit ? Math.min(100, pct((need + limit) / 2)) : null; // midway between the two
+      if (limit != null && gap >= limit) {
+        out.push({ level: 'warning', target: c.id, title: `${name}: the fingers open into the next vial`,
+          detail: `Open to ${c.openTo}% the fingers are ${mm(gap)} apart, and the next vial is in their way from ${mm(limit)}.`
+            + (room == null ? ' This gripper has no room between these vials.' : ''),
+          fix: room == null ? undefined : { label: `Open to ${room}%`, apply: patch(c.id, { openTo: room }) } });
+      } else if (need + 0.002 <= stroke && gap < need + 0.002) {
+        const wide = room ?? Math.min(100, pct(need + 0.006));
+        out.push({ level: 'warning', target: c.id, title: `${name}: the fingers do not open enough for the item`,
+          detail: `Open to ${c.openTo}% the fingers are ${mm(gap)} apart; the item needs ${mm(need)}.`,
+          fix: { label: `Open to ${wide}%`, apply: patch(c.id, { openTo: wide }) } });
+      }
+    }
+    if (c.openTo < 100 && p.gripper.type === 'digital_out') {
+      out.push({ level: 'warning', target: c.id, title: `${name}: this gripper only opens fully`,
+        detail: `A gripper on a digital output is open or closed, so the ${c.openTo}% set here is not used on the robot.` });
+    }
+
+    const tilt = tiltFromSkill(c, p);
     if (tilt > 0.5) {
       out.push({ level: 'warning', target: c.id,
         title: skill === 'top_down' ? `${name}: tool ${tilt.toFixed(1)}° off vertical` : `${name}: tool ${tilt.toFixed(1)}° off the rack axis`,
@@ -143,7 +204,7 @@ export function checkProject(p: Project): Finding[] {
     const sp = p.safePoints.find((s) => s.id === c.safePoint);
     if (sp) {
       const spAt = safePointTcp(sp, p);
-      const top = Math.max(...Array.from({ length: n }, (_, i) => approachMatrix(c, i)[11]));
+      const top = Math.max(...Array.from({ length: n }, (_, i) => approachMatrix(c, i, p)[11]));
       if (spAt[11] < top - 0.01) {
         out.push({ level: 'warning', target: c.id, title: `${name}: safe point ${sp.label} is below its approach`,
           detail: 'The arm comes from the safe point down into the approach point; a safe point lower than that drags the gripper across the stations.' });

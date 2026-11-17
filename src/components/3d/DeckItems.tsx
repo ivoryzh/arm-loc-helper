@@ -5,7 +5,7 @@ import { Html, Line } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { componentReach, type Reach } from '../../lib/checks';
-import { approachMatrix, linksOf, slotCount, slotMatrix, slotOffset, type DeckComponent, type Project } from '../../lib/deck';
+import { approachMatrix, gripOf, linksOf, slotCount, slotMatrix, slotOffset, type DeckComponent, type Project } from '../../lib/deck';
 import { fk } from '../../lib/kinematics';
 import { fromPose, multiply, type Mat4 } from '../../lib/mat4';
 import { ROBOTS } from '../../lib/robots';
@@ -103,11 +103,12 @@ export function Slots({ c, project, selected, occupancy, onPick }: Omit<Componen
   const reach = useMemo(() => componentReach(project, c), [project, c]);
   const n = slotCount(c);
   const kind = itemKind(c);
+  const grip = useMemo(() => toThree(gripOf(project)), [project]);
   if (!n) return null;
   return (
     <group onClick={onPick}>
       {Array.from({ length: n }, (_, i) => {
-        const s = slotMatrix(c, i), a = approachMatrix(c, i);
+        const s = slotMatrix(c, i, project), a = approachMatrix(c, i, project);
         const filled = occupancy.get(`${c.id}[${i}]`) ?? c.filled;
         const color = REACH_COLOR[reach.slots[i] === 'none' || reach.approaches[i] === 'none' ? 'none' : reach.slots[i]];
         return (
@@ -125,7 +126,9 @@ export function Slots({ c, project, selected, occupancy, onPick }: Omit<Componen
             )}
             {filled && kind && (
               <group matrixAutoUpdate={false} matrix={toThree(s)}>
-                <Item c={c} />
+                <group matrixAutoUpdate={false} matrix={grip}>
+                  <Item c={c} />
+                </group>
               </group>
             )}
           </group>
@@ -133,7 +136,7 @@ export function Slots({ c, project, selected, occupancy, onPick }: Omit<Componen
       })}
       {/* the tool axis at slot 0: where the gripper points */}
       {(() => {
-        const s = slotMatrix(c, 0);
+        const s = slotMatrix(c, 0, project);
         const tip: [number, number, number] = [s[3] - s[2] * 0.05, s[7] - s[6] * 0.05, s[11] - s[10] * 0.05];
         return <Line points={[tip, pos(s)]} color="#06b6d4" lineWidth={2} />;
       })()}
@@ -173,7 +176,7 @@ export function SafeNetwork({ project, selection }: { project: Project; selectio
     const sp = at.get(c.safePoint);
     if (!sp || !slotCount(c)) continue;
     const sel = selection?.type === 'component' && selection.id === c.id;
-    lines.push({ a: pos(approachMatrix(c, 0)), b: sp, key: `c-${c.id}`, strong: sel, dashed: true });
+    lines.push({ a: pos(approachMatrix(c, 0, project)), b: sp, key: `c-${c.id}`, strong: sel, dashed: true });
   }
   return (
     <group>

@@ -1,9 +1,10 @@
 // The things the arm carries: a vial, an SBS plate, a placeholder for anything else. Drawn in the
-// TCP's frame (z out of the gripper), so the same mesh sits in a slot and hangs from the fingers.
+// tool's grip frame (at the TCP, z into the item), so the same mesh sits in a slot and hangs from the
+// fingers.
 import type { DeckComponent } from '../../lib/deck';
 import { itemKind, placeholderRadius, plateTurn, vialRadius } from '../../lib/items';
 
-/** An item with the TCP at the origin and the tool's z axis pointing into it. */
+/** An item with the TCP at the origin and the grip frame's z axis pointing into it. */
 export function Item({ c, ghost = false }: { c: DeckComponent; ghost?: boolean }) {
   const kind = itemKind(c);
   const opacity = ghost ? 0.25 : 1;

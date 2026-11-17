@@ -80,6 +80,7 @@ export function MotionPanel({ onItemsChanged }: { onItemsChanged: () => void }) 
       // a fresh start: items back where the deck starts them
       arm.current.occupancy.clear();
       arm.current.carrying = null;
+      arm.current.closingOn = null;
       onItemsChanged();
     }
     arm.current.grip = from?.grip ?? 1;
@@ -105,6 +106,7 @@ export function MotionPanel({ onItemsChanged }: { onItemsChanged: () => void }) 
     arm.current.player = null;
     arm.current.target = null;
     arm.current.carrying = null;
+    arm.current.closingOn = null;
     arm.current.grip = 1;
     arm.current.occupancy.clear();
     onItemsChanged();
@@ -149,7 +151,7 @@ export function MotionPanel({ onItemsChanged }: { onItemsChanged: () => void }) 
           return (
             <div key={i} className={`step ${i === current ? 'current' : ''} ${bad ? 'error' : ''} ${traj?.error && i > traj.error.step ? 'dim' : ''}`}>
               <span className="step-kind">{KIND_LABEL[s.kind]}{s.slow ? ' · slow' : ''}</span>
-              <span className="step-name mono">{s.kind === 'gripper' ? `${s.name}()` : s.name}</span>
+              <span className="step-name mono">{s.kind === 'gripper' ? `${s.name}(${s.percent != null && s.percent < 100 ? `${s.percent}%` : ''})` : s.name}</span>
               {bad && <span className="step-error">{traj!.error!.message}</span>}
             </div>
           );

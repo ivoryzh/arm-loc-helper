@@ -78,8 +78,9 @@ function reducer(state: State, a: Action): State {
 export interface ArmView {
   target: Joints | null;        // where the arm should be (it eases there)
   q: Joints | null;             // where it is drawn
-  grip: number;                 // 1 open .. 0 closed
+  grip: number;                 // how far open, as a fraction of the stroke: 1 fully .. 0 closed
   carrying: string | null;      // the component whose item is in the gripper
+  closingOn: string | null;     // the component whose item the gripper is closing on, before it carries it
   occupancy: Map<string, boolean>; // "component[slot]" -> holds an item, during a preview
   playing: boolean;
   player: PlayerRun | null;
@@ -121,7 +122,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, null, () => ({
     project: loadSaved() ?? demoProject(), past: [], future: [], selection: null, lastKey: null, lastAt: 0,
   }));
-  const arm = useRef<ArmView>({ target: null, q: null, grip: 1, carrying: null, occupancy: new Map(), playing: false, player: null });
+  const arm = useRef<ArmView>({ target: null, q: null, grip: 1, carrying: null, closingOn: null, occupancy: new Map(), playing: false, player: null });
 
   useEffect(() => {
     const t = setTimeout(() => saveLocal(state.project), 300);

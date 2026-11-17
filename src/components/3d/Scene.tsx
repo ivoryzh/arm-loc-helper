@@ -86,6 +86,7 @@ function PlayerTick({ project, onItemsChanged }: { project: Project; onItemsChan
       run.onSegment(run.seg);
     }
     if (run.seg >= segs.length) {
+      a.closingOn = null;
       a.target = run.traj.end;
       a.grip = segs.length ? segs[segs.length - 1].gripTo : a.grip;
       run.running = false;
@@ -94,6 +95,11 @@ function PlayerTick({ project, onItemsChanged }: { project: Project; onItemsChan
       return;
     }
     const { q, grip } = sampleSegment(segs[run.seg], run.t - run.segStart);
+    // closing on a slot that holds an item, the fingers stop at the item
+    const now = segs[run.seg].step;
+    const at = now.kind === 'gripper' && now.name === 'close' && now.after?.kind === 'loc' ? now.after : null;
+    const there = at && project.components.find((x) => x.id === at.name);
+    a.closingOn = there && (a.occupancy.get(`${at!.name}[${at!.index}]`) ?? there.filled) ? there.id : null;
     a.playing = true;
     a.target = q;
     a.grip = grip;

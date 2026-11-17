@@ -14,7 +14,7 @@ export interface Segment {
   step: PlanStep;
   duration: number;
   samples: Joints[];      // evenly spaced in time, first = start, last = end
-  gripFrom: number;       // 1 open .. 0 closed
+  gripFrom: number;       // how far open, as a fraction of the stroke: 1 fully .. 0 closed
   gripTo: number;
 }
 
@@ -39,7 +39,7 @@ export function buildTrajectory(p: Project, steps: PlanStep[], start: Joints, st
   for (let si = 0; si < steps.length; si++) {
     const step = steps[si];
     if (step.kind === 'gripper') {
-      const to = step.name === 'open' ? 1 : 0;
+      const to = step.name === 'open' ? (step.percent ?? 100) / 100 : 0;
       segments.push({ step, duration: GRIP_SECONDS, samples: [q, q], gripFrom: grip, gripTo: to });
       grip = to;
       continue;

@@ -14,6 +14,7 @@ export interface RuntimeLocation {
   skill: string;
   safe_point: string;
   approach: number[];
+  open: number;       // how far the gripper opens here, % of its stroke
   slots: number[][];
   grid?: { rows: number; cols: number };
 }
@@ -41,13 +42,13 @@ export const tcpToFlange = (tcp: Mat4, p: Project): Mat4 => multiply(tcp, invert
 /** The TCP at a safe point: from its taught joints, or tool-down at its position. */
 export function safePointTcp(s: SafePointDef, p: Project): Mat4 {
   if (s.q) return multiply(fk(s.q, ROBOTS[p.robot.model].params), flangeToTcp(p));
-  return safePointMatrix(s);
+  return safePointMatrix(s, p);
 }
 
 /** Joints for a safe point: the taught ones, or the arm's resting posture at its pose. */
 export function safePointJoints(s: SafePointDef, p: Project): Joints | null {
   if (s.q) return s.q;
-  return restingSolution(tcpToFlange(safePointMatrix(s), p), ROBOTS[p.robot.model].params);
+  return restingSolution(tcpToFlange(safePointMatrix(s, p), p), ROBOTS[p.robot.model].params);
 }
 
 export function exportDeck(p: Project): RuntimeDeck {
@@ -79,7 +80,8 @@ export function exportDeck(p: Project): RuntimeDeck {
       skill,
       safe_point: c.safePoint,
       approach: round(approachVector(c)),
-      slots: Array.from({ length: slotCount(c) }, (_, i) => round(poseOf(slotMatrix(c, i)))),
+      open: r6(c.openTo),
+      slots: Array.from({ length: slotCount(c) }, (_, i) => round(poseOf(slotMatrix(c, i, p)))),
     };
     if (c.kind !== 'station') loc.grid = { rows: c.rows, cols: c.cols };
     locations[c.id] = loc;

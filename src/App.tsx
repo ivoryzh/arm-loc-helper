@@ -69,13 +69,17 @@ function Editor() {
     a.player = null;
     a.playing = false;
     let target: Joints | null = null;
+    let open = 100; // the gripper shows how far it opens at the selected component
     const solve = (tcp: number[]) => {
       const sols = ik(tcpToFlange(tcp, project), params);
       return homeQ ? nearest(sols, homeQ, elbowUp) ?? nearest(sols, homeQ) : null;
     };
     if (selection?.type === 'component') {
       const c = project.components.find((x) => x.id === selection.id);
-      if (c && c.kind !== 'block') target = solve(slotMatrix(c, Math.min(previewSlot, c.rows * c.cols - 1)));
+      if (c && c.kind !== 'block') {
+        target = solve(slotMatrix(c, Math.min(previewSlot, c.rows * c.cols - 1), project));
+        open = c.openTo;
+      }
     } else if (selection?.type === 'safe') {
       const s = project.safePoints.find((x) => x.id === selection.id);
       if (s) target = safePointJoints(s, project);
@@ -84,6 +88,7 @@ function Editor() {
       if (w) target = w.q ?? solve(waypointMatrix(w, project));
     }
     a.target = target ?? homeQ;
+    if (!a.carrying) a.grip = open / 100;
   }, [selection, project, previewSlot, homeQ, params, arm]);
 
   useEffect(() => setPreviewSlot(0), [selection?.id]);

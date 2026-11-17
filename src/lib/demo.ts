@@ -3,11 +3,12 @@
 import { DEFAULT_GRIPPER, DEFAULT_MOTION, type DeckComponent, type Project } from './deck';
 import { TOOLS, mountTcp } from './tools';
 
-const base = { rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, toolYaw: 0, yaw: 0, filled: false };
+const base = { rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, toolYaw: 0, yaw: 0, openTo: 100, filled: false };
 
 const components: DeckComponent[] = [
   { ...base, id: 'vial_tray', label: 'Vial tray', kind: 'tray', x: 0.3, y: 0.3, z: 0.07, rows: 2, cols: 4,
-    approach: 0.08, safePoint: 'left', size: [0.15, 0.09, 0.04], gripHeight: 0.03, color: '#64748b', filled: true },
+    // fully open, the Hand-E's fingers would be into the next vials: 60% is 30 mm, round a 22 mm vial
+    approach: 0.08, safePoint: 'left', size: [0.15, 0.09, 0.04], gripHeight: 0.03, openTo: 60, color: '#64748b', filled: true },
   { ...base, id: 'balance', label: 'Balance', kind: 'station', x: 0.47, y: 0.08, z: 0.14,
     approach: 0.1, safePoint: 'left', size: [0.2, 0.28, 0.11], gripHeight: 0.03, color: '#a16207' },
   { ...base, id: 'capper', label: 'Capper', kind: 'station', x: 0.12, y: 0.52, z: 0.16,

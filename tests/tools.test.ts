@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { checkProject } from '../src/lib/checks';
 import { demoProject } from '../src/lib/demo';
-import { column, fromPose } from '../src/lib/mat4';
+import { slotMatrix, tiltFromSkill } from '../src/lib/deck';
+import { column, fromPose, invertRigid, multiply, toAxisAngle } from '../src/lib/mat4';
 import { exportDeck } from '../src/lib/runtimeDeck';
 import { normalizeProject } from '../src/lib/storage';
-import { BRACKET_90, FLANGE_RADIUS, MOUNT_FINGER_AXIS, TOOLS, TOOL_IDS, TOOL_PACKAGES, fingerAxisOf, fingerJoint, mountLabel, mountOf, mountTcp, placeTool } from '../src/lib/tools';
+import { BRACKET_90, CLOSED_GAP, FLANGE_RADIUS, MOUNT_FINGER_AXIS, TOOLS, TOOL_IDS, TOOL_PACKAGES, closedGap, fingerAxisOf, fingerJoint, gripFrame, mountLabel, mountOf, mountTcp, pinMiddle, placeTool } from '../src/lib/tools';
 
 describe('end effectors', () => {
   it('reads a mount back from the TCP it sets', () => {
@@ -49,8 +50,12 @@ describe('end effectors', () => {
       expect(placed.mount.depth).toBeCloseTo(BRACKET_90.depth, 6);
       expect(placed.mount.spacer).toBeCloseTo(0, 6);
     }
+    // and the TCP is in the middle of the four pins, which are a little back from the fingertips
+    expect(pinMiddle(pins.rods!)).toBeCloseTo(0.011, 9);
+    expect(-tcp[1]).toBeCloseTo(BRACKET_90.reach + pins.length - 0.011, 6);
     expect(placed.tip[0]).toBeCloseTo(-FINGER_DROP, 6);
-    expect(Math.hypot(placed.tip[1], placed.tip[2])).toBeLessThan(1e-6);
+    expect(placed.tip[1]).toBeCloseTo(0, 6);
+    expect(placed.tip[2]).toBeCloseTo(0.011, 6);
     expect(placeTool([0, 0, pins.length, 0, 0, 0], pins).tip).toEqual([0, 0, 0]);
 
     // the same TCP on the standard fingers is a gripper hung that much lower, with no pins
@@ -75,12 +80,12 @@ describe('end effectors', () => {
     expect(mount).toMatchObject({ kind: 'bracket' });
     if (mount.kind === 'bracket') expect(mount.turn).toBeCloseTo(-Math.PI / 2, 4);
     // with the pin fingers it was taught with, the real bracket holds it: its pins reach the TCP, and
-    // the 7.6 mm it is longer than the model shows as a coupling on the bracket's face
+    // the 18.6 mm it is further out than the model's pins shows as a coupling on the bracket's face
     const pinned = placeTool(taught, TOOLS.hand_e_pins);
     expect(pinned.mount).toMatchObject({ kind: 'bracket' });
     if (pinned.mount.kind === 'bracket') {
       expect(pinned.mount.depth).toBeCloseTo(BRACKET_90.depth, 6);
-      expect(pinned.mount.spacer).toBeCloseTo(0.20662 - TOOLS.hand_e_pins.length - BRACKET_90.reach, 4);
+      expect(pinned.mount.spacer).toBeCloseTo(0.20662 + 0.011 - TOOLS.hand_e_pins.length - BRACKET_90.reach, 4);
     }
     expect(mountTcp(TOOLS.hand_e_pins, 'right_angle')[2]).toBeCloseTo(taught[2], 3); // the preset's pins reach as far
   });
@@ -140,12 +145,21 @@ describe('end effectors', () => {
 
       const urdf = readFileSync(new URL(`../public/${rg.model!.urdf}`, import.meta.url), 'utf8');
       expect(urdf).toContain(`<joint name="${rg.tilt!.joint}"`);
+      // the drawing turns the bracket about the same axis: `pivot` out from the flange, and the
+      // bracket's mesh hung back from there by as much
+      const z = (after: string) => +urdf.split(after)[1].match(/<origin xyz="0 0 (-?[\d.]+)"/)![1];
+      expect(z('<joint name="body_joint"') + z(`<joint name="${rg.tilt!.joint}"`)).toBeCloseTo(pivot, 6);
+      expect(z('<link name="bracket">')).toBeCloseTo(-pivot, 6);
       // its fingers lie along the tilt axis whatever the deck's setting says
       expect(fingerAxisOf(tcp, rg, 'x')).toBe('y');
       expect(fingerAxisOf(mountTcp(rg, 'straight'), rg, 'y')).toBe('x');
       expect(placeTool(tcp, rg, fingerAxisOf(tcp, rg, 'x')).mount).toEqual({ kind: 'none' });
       expect(fingerAxisOf(tcp, TOOLS.hand_e, 'x')).toBe('x'); // on the others it is the user's to set
     }
+    // the RG2 turns about the middle of its bracket's rings of holes, 39 mm from the flange and 11 mm
+    // behind the body's origin, where the body's own holes bolt on
+    expect(TOOLS.rg2.tilt!.pivot).toBe(0.039);
+    expect(mountTcp(TOOLS.rg2, 'right_angle').slice(0, 3)).toEqual([0, -0.1737, 0.039]);
     // and the tools that do not tilt keep their bracket
     expect(placeTool(mountTcp(TOOLS.hand_e, 'right_angle'), TOOLS.hand_e, 'y').mount.kind).toBe('bracket');
   });
@@ -212,5 +226,45 @@ describe('end effectors', () => {
     p.robot.tcp = mountTcp(TOOLS.hand_e, 'right_angle');
     const errors = checkProject(p).filter((f) => f.level === 'error');
     expect(errors, errors.map((f) => f.title).join('\n')).toEqual([]);
+  });
+
+  it('picks from above with the pins hanging over the item, and closes them onto it', () => {
+    const pins = TOOLS.hand_e_pins, rods = pins.rods!;
+    // a gripper grips along its own axis; only pin fingers out at their pins grip another way
+    for (const id of TOOL_IDS) for (const mount of ['straight', 'right_angle'] as const) {
+      const g = gripFrame(mountTcp(TOOLS[id], mount), TOOLS[id]);
+      expect(g[0] === 1 && g[5] === 1 && g[10] === 1, `${id} ${mount}`).toBe(!(id === 'hand_e_pins' && mount === 'right_angle'));
+    }
+
+    const taught = [0.00629, -0.20662, 0.07706, 1.2092, -1.2092, 1.2092];
+    for (const tcp of [mountTcp(pins, 'right_angle'), taught]) {
+      const p = demoProject();
+      p.gripper.model = 'hand_e_pins';
+      p.robot.tcp = tcp;
+      const tray = p.components.find((c) => c.id === 'vial_tray')!;
+      const slot = slotMatrix(tray, 3, p), plain = slotMatrix(tray, 3, demoProject());
+      expect([slot[3], slot[7], slot[11]]).toEqual([plain[3], plain[7], plain[11]]); // the TCP is where it was
+      const flange = multiply(slot, invertRigid(fromPose(tcp)));
+      expect(column(flange, 2)[2]).toBeCloseTo(-1, 6);   // the wrist points down, and the pins with it
+      expect(slot[10]).toBeCloseTo(0, 6);                // and the gripper lies flat
+      expect(slot[2]).toBeCloseTo(1, 6);                 // along the tray's x
+      // safe points carry the tool the same way, so going in is not a turn of the wrist
+      const safe = fromPose(exportDeck(p).safe_points.left.pose);
+      expect(column(multiply(safe, invertRigid(fromPose(tcp))), 2)[2]).toBeCloseTo(-1, 5);
+      // and a pose taught that way is square to its tray, not 90° off
+      tray.taught = toAxisAngle(slot);
+      expect(tiltFromSkill(tray, p)).toBeLessThan(1e-3);
+      expect(checkProject(p).filter((f) => /off vertical/.test(f.title))).toEqual([]);
+    }
+
+    // closed on a vial, each of the four pins touches it
+    for (const d of [0.016, 0.0216, 0.028]) {
+      const gap = closedGap(pins, d, true);
+      expect(Math.hypot(gap / 2 + rods.offset, 0.005)).toBeCloseTo(d / 2 + rods.radius, 9);
+    }
+    expect(closedGap(pins, 0.008, true)).toBe(0);                         // too thin for them: fingers together
+    expect(closedGap(TOOLS.hand_e, 0.02)).toBe(0.02);                     // fingers close to the item's width
+    expect(closedGap(TOOLS.hand_e, 0.0855)).toBe(TOOLS.hand_e.stroke);    // or as far as they go
+    expect(closedGap(TOOLS.hand_e, null)).toBe(CLOSED_GAP);
   });
 });

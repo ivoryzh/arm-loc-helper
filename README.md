@@ -36,11 +36,16 @@ Universal Robots arms come first (UR3, UR5, UR10 and their e-series), driven thr
    - **Side-load** (a rack that stands up: a grid of rows × columns holding slides, plates, tubes,
      a hotel, a drawer): the tool is horizontal, and the arm goes in and out along the rack's axis.
      Its slots are drawn as dots, since a rack does not say what it holds.
+
+   Each component also says how far the gripper **opens** there, as a percentage of its stroke (100,
+   fully, by default): before a pick, and to let go on a place. On a tray of vials standing close
+   together, less keeps the fingers out of the vials either side.
 4. **Place safe points and link them.** The arm travels between stations only through safe points:
    safe point → the station's safe point → approach point → slot, and back out the same way. With
    three safe points, any location can reach any other along a path you laid out.
 5. **Read the checks.** They catch slots out of reach, poses that only work with the elbow down,
-   and a taught pose that is 2.9° off vertical (with **Snap to vertical**). They also catch racks
+   and a taught pose that is 2.9° off vertical (with **Snap to vertical**). They catch a gripper that
+   opens into the next vial, or not enough for its own, and offer the percentage in between. They also catch racks
    that are not square to the robot, safe points below their stations, safe points cut off from
    home, and a script whose TCP differs from the deck's.
 6. **Preview a call** (`transfer`, `pick`, `place`, …) on the Motion tab. The arm moves the way a UR
@@ -73,7 +78,7 @@ arm.home()
 | `plan(action, ...)` | The moves a call would make, without moving |
 | `check()` | Asks the robot whether every pose is reachable and within its safety limits |
 | `recover(safe_point=None)` | The one move off the safe network: straight to a safe point after a stop or a jog |
-| `where()`, `set_speed(f)`, `open_gripper()`, `close_gripper()`, `disconnect()` | |
+| `where()`, `set_speed(f)`, `open_gripper(percent=100)`, `close_gripper()`, `disconnect()` | |
 
 It refuses unsafe calls rather than guessing:
 - **Unknown position.** At start-up it locates the arm against the safe points and approach points.
@@ -86,6 +91,11 @@ It refuses unsafe calls rather than guessing:
 
 Grippers: Robotiq 2F/Hand-E through the URCap socket (port 63352), a digital output (pneumatic,
 tool I/O), or your own object with `open()` and `close()`.
+
+A location's opening is a percentage of the stroke, 100 fully open and 0 closed, whatever the gripper
+counts in (Robotiq's own scale runs the other way: 0 open to 255 closed, which the Robotiq driver
+converts to, evenly between the two). Your own gripper takes it as `open_to(percent)`; one without
+that method, and a digital output, open fully.
 
 **In IvoryOS** it is an ordinary instrument. Create it in your deck script, and every method shows
 up in the workflow designer, with the locations and safe points as dropdowns (the exported class
@@ -168,7 +178,11 @@ that hold pins, for a gripper on the 90° bracket to pick from above with the wr
 It is the only tool drawn with pins; on the others the 90° bracket's TCP is on the gripper's own axis.
 Its two meshes (`public/hande_pin_finger_*.stl`) are in the repository, written by
 `scripts/make_hande_pin_fingers.py` from the CAD export; the pins are fixed in the bosses, gripping
-38.5 mm from the gripper's axis, and turn with the gripper.
+38.5 mm from the gripper's axis, and turn with the gripper. On the 90° bracket the TCP is in the middle
+of the four pins, and the tool grips along them: a top-down pick hangs the pins over the item with the
+gripper lying flat, and a side-load pokes them into the rack (`gripFrame` in `src/lib/tools.ts`; a taught
+orientation is kept as taught). In the preview the fingers close on what they pick up: to a vial's width,
+or until all four pins touch it.
 
 The 90° bracket is the lab's own too (`public/bracket_90.stl`, written by `scripts/make_bracket_mesh.py`
 from its CAD export): it bolts to the flange's 50 mm bolt circle and holds the gripper 42.5 mm out from

@@ -54,7 +54,7 @@ function ComponentInspector({ c, previewSlot, setPreviewSlot }: { c: DeckCompone
   const n = slotCount(c);
   const reach = skill ? componentReach(project, c) : null;
   const reachable = reach ? reach.slots.filter((r, i) => r !== 'none' && reach.approaches[i] !== 'none').length : 0;
-  const tilt = tiltFromSkill(c);
+  const tilt = tiltFromSkill(c, project);
   const poseWaypoints = project.waypoints;
 
   return (
@@ -103,6 +103,8 @@ function ComponentInspector({ c, previewSlot, setPreviewSlot }: { c: DeckCompone
             {c.kind !== 'side_rack' && <NumberField label="Grip depth" value={c.gripHeight} min={0} onChange={(v) => set({ gripHeight: v }, 'gripHeight')} {...MM}
               title="How far below the grip point the item stands on the body (draws the body)" />}
           </Row>
+          <NumberField label="Opens to" value={c.openTo} integer min={0} max={100} unit="%" onChange={(v) => set({ openTo: v }, 'openTo')}
+            title="How far the gripper opens here, before a pick and to let go: 100% is fully open. Less keeps the fingers out of the items next to it." />
           <SelectField label="Entered from" value={c.safePoint} onChange={(v) => set({ safePoint: v })}
             options={project.safePoints.map((s) => ({ value: s.id, label: s.label + (s.id === project.home ? ' (home)' : '') }))} />
         </Section>

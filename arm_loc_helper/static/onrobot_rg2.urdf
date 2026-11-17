@@ -3,10 +3,14 @@
      config/rg2_v1.yaml (libishm1/onrobot1_ros @ 9c6ce32, MIT; after ikalevatykh/onrobot_ros, MIT).
      Fingers open along x; finger_joint is finger 1's moment arm, 0 open to 1.2197 closed.
 
-     The RG2 bolts to its own bracket at an angle: the body turns about the axis its fingers open
-     along, 50 mm out from the flange. The editor draws a tool back from its fingertips, so the body is the fixed
-     part here and the bracket hangs off it on mount_joint (the source has it the other way round,
-     as a fixed mount_angle). The root is where the flange is with the gripper straight. -->
+     The RG2 bolts to its own bracket at an angle. Each arm of the bracket ends in a ring of twelve
+     holes, 30° apart on a 28.3 mm circle whose middle is 39 mm out from the flange; the body has M4
+     holes on the corners of a 20 mm square about the same point, 11 mm behind its own origin, and
+     bolts to whichever of the ring's holes those meet. So the body turns about the ring's middle, on
+     the axis its fingers open along. The editor draws a tool back from its fingertips, so the body
+     is the fixed part here and the bracket hangs off it on mount_joint, at the ring's middle (the
+     source has it the other way round, as a fixed mount_angle about the body's origin, which is only
+     right with the gripper straight). The root is where the flange is with the gripper straight. -->
 <robot name="onrobot_rg2">
   <material name="onrobot/grey"><color rgba="0.65 0.62 0.58 1"/></material>
   <material name="onrobot/light_grey"><color rgba="0.9 0.92 0.93 1"/></material>
@@ -26,7 +30,7 @@
   </link>
 
   <joint name="mount_joint" type="revolute">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.011" rpy="0 0 0"/>
     <parent link="body"/>
     <child link="bracket"/>
     <axis xyz="1 0 0"/>
@@ -34,7 +38,7 @@
   </joint>
   <link name="bracket">
     <visual>
-      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.039" rpy="0 0 0"/>
       <geometry><mesh filename="package://onrobot_description/meshes/rg2_v1/visual/single_bracket.stl"/></geometry>
       <material name="onrobot/grey"/>
     </visual>

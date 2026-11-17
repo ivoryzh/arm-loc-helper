@@ -3,7 +3,7 @@
 // arrive, or if they never do), and a mount is a nominal TCP for that tool. The TCP stays the truth:
 // the mount shown in the inspector is read back from it, and anything that is not a preset is "custom". Nothing here reaches the exported controller, which
 // only ever sees `robot.tcp`.
-import { column, fromPose, translation, type Mat4, type Vec3 } from './mat4';
+import { column, fromPose, identity, translation, type Mat4, type Vec3 } from './mat4';
 
 export type ToolId = 'hand_e' | 'hand_e_pins' | '2f_85' | '2f_140' | 'rg2' | 'rg6';
 export type MountId = 'straight' | 'right_angle';
@@ -24,7 +24,8 @@ export interface ToolModel {
 /**
  * A tool that comes with its own angled bracket (the RG2 and RG6): its body bolts on turned about the
  * axis its fingers open along, `pivot` out from the flange, so it needs no 90° bracket to lie across
- * the flange.
+ * the flange. The axis is where the body bolts to the bracket (on the RG2, the middle of a ring of holes
+ * 30° apart), not the body's own origin.
  */
 export interface ToolTilt {
   pivot: number;  // flange face to the tilt axis
@@ -33,9 +34,9 @@ export interface ToolTilt {
 
 /**
  * The pins fixed in a tool's fingers: they stick out sideways (the gripper's -y, across the way the
- * fingers open) and grip `reach` from the tool's axis, so that is where its TCP is on a 90° bracket
- * (pins that hang down over a vial when the wrist points down). They are part of the gripper and turn
- * with it. A tool without them is just the gripper: its TCP is on its own axis.
+ * fingers open) and grip `reach` from the tool's axis, in the middle of the four, so that is where its
+ * TCP is on a 90° bracket (pins that hang down over a vial when the wrist points down). They are part
+ * of the gripper and turn with it. A tool without them is just the gripper: its TCP is on its own axis.
  */
 export interface FingerRods {
   back: number[];   // each pin's distance back from the fingertips, along the tool
@@ -72,6 +73,29 @@ export const TOOL_PACKAGES: Record<string, string> = {
   onrobot_description: 'https://cdn.jsdelivr.net/gh/libishm1/onrobot1_ros@9c6ce32d84bd903d59120c2a95d4a115d6e33cde/onrobot_description',
 };
 
+/** How far back from the fingertips the middle of a tool's pins is: where they hold an item. */
+export const pinMiddle = (rods: FingerRods) => rods.back.reduce((a, b) => a + b, 0) / rods.back.length;
+
+/** With nothing in them, the fingers are drawn closed to this. */
+export const CLOSED_GAP = 0.012;
+
+/**
+ * The finger gap when closed on an item `width` across (a vial's diameter), or on nothing. Fingers
+ * close to the item's width. Pins hold a round item between the four of them, so they close until
+ * each one touches it.
+ */
+export function closedGap(tool: ToolModel, width: number | null, byPins = false): number {
+  if (width == null) return Math.min(CLOSED_GAP, tool.stroke);
+  let gap = width;
+  if (byPins && tool.rods) {
+    const { back, offset, radius } = tool.rods;
+    const half = (Math.max(...back) - Math.min(...back)) / 2; // a pin's distance along the tool from the middle
+    const touch = width / 2 + radius;                           // and from the item's axis, touching it
+    gap = 2 * (Math.sqrt(Math.max(0, touch * touch - half * half)) - offset);
+  }
+  return Math.max(0, Math.min(tool.stroke, gap));
+}
+
 /** The driving joint's value for a finger gap. */
 export function fingerJoint(tool: ToolModel, gap: number): number | null {
   if (!tool.model) return null;
@@ -91,8 +115,9 @@ const RG2_SWING: FingerSwing = { arm: Math.hypot(0.0256, 0.04868), phase: Math.a
 // across, 50 mm stroke), 2F-85 174 mm and 2F-140 244 mm (Robotiq quotes 162.8 and 232.8 without the
 // coupling). The RG6 (v2) is 290.5 mm to its closed fingertips: 56.1 mm of bracket to the tilt axis,
 // then 234.4 mm of gripper. Its fingertips pull back as they open (54 mm at full stroke), and this
-// model opens to 150 mm at its joint limit, where OnRobot quotes 160. The RG2 (v1) is 212.7 mm: 50 mm
-// of bracket, then 162.7 mm of gripper; its model opens to 100 mm, where OnRobot quotes 110.
+// model opens to 150 mm at its joint limit, where OnRobot quotes 160. The RG2 (v1) is 212.7 mm: 39 mm
+// of bracket to the tilt axis (the middle of the bracket's rings of holes, which the body's own holes
+// bolt to), then 173.7 mm of gripper; its model opens to 100 mm, where OnRobot quotes 110.
 // Close enough to place a deck, not to skip measuring the TCP.
 export const TOOLS: Record<ToolId, ToolModel> = {
   hand_e: { id: 'hand_e', label: 'Robotiq Hand-E', style: 'parallel', length: 0.1565, fingerLength: 0.045, bodyRadius: 0.0375, stroke: 0.05,
@@ -108,7 +133,7 @@ export const TOOLS: Record<ToolId, ToolModel> = {
     model: { urdf: 'robotiq_2f_140.urdf', joint: 'finger_joint', open: 0, closed: 0.695 } },
   rg2: { id: 'rg2', label: 'OnRobot RG2', style: 'linkage', length: 0.2127, fingerLength: 0.085, bodyRadius: 0.036, stroke: 0.1,
     model: { urdf: 'onrobot_rg2.urdf', joint: 'finger_joint', open: 0.01708, closed: 1.219729, swing: RG2_SWING },
-    tilt: { pivot: 0.05, joint: 'mount_joint' } },
+    tilt: { pivot: 0.039, joint: 'mount_joint' } },
   rg6: { id: 'rg6', label: 'OnRobot RG6', style: 'linkage', length: 0.2905, fingerLength: 0.116, bodyRadius: 0.042, stroke: 0.15,
     model: { urdf: 'onrobot_rg6.urdf', joint: 'finger_joint', open: 0.003175, closed: 1.238486, swing: RG6_SWING },
     tilt: { pivot: 0.0561, joint: 'mount_joint' } },
@@ -168,7 +193,33 @@ export function mountTcp(tool: ToolModel, mount: MountId): number[] {
   if (mount === 'straight') return [0, 0, tool.length, 0, 0, 0];
   // tilted on its own bracket, the gripper swings down about its pivot: the same pose, no bracket
   if (tool.tilt) return [0, -r6(tool.length - tool.tilt.pivot), r6(tool.tilt.pivot), r6(ACROSS), -r6(ACROSS), r6(ACROSS)];
-  return [0, -r6(BRACKET_90.reach + tool.length), r6(BRACKET_90.depth + (tool.rods?.reach ?? 0)), r6(ACROSS), -r6(ACROSS), r6(ACROSS)];
+  // pin fingers hold the item in the middle of their pins, a little back from the fingertips
+  const back = tool.rods ? pinMiddle(tool.rods) : 0;
+  return [0, -r6(BRACKET_90.reach + tool.length - back), r6(BRACKET_90.depth + (tool.rods?.reach ?? 0)), r6(ACROSS), -r6(ACROSS), r6(ACROSS)];
+}
+
+/**
+ * How far the TCP is out along the flange's axis from a gripper lying across the flange on the
+ * bracket, when that is its pins' doing: the TCP is where the pins grip. 0 for a tool without pins,
+ * or one whose TCP is on its own axis.
+ */
+function pinDrop(m: Mat4, tool: ToolModel): number {
+  const across = Math.abs(m[10]) < 0.35;
+  return tool.rods && across && m[11] > BRACKET_90.depth + 0.002 ? m[11] - BRACKET_90.depth : 0;
+}
+
+/**
+ * The frame a tool grips in, as seen from the TCP's frame: z into the item, x and y as a skill turns
+ * them. A gripper grips along its own axis, so that is the TCP's frame itself. Pin fingers in use (the
+ * TCP out at their pins) grip along the pins: z along them, x along the gripper, so that a pick from
+ * above hangs the pins over the item with the gripper lying flat.
+ */
+export function gripFrame(tcp: number[], tool: ToolModel): Mat4 {
+  const m = fromPose(tcp);
+  if (!pinDrop(m, tool)) return identity();
+  // the pins run along the flange's axis, which the TCP's frame sees as its rotation's third row
+  const n = Math.hypot(m[8], m[9]), dx = m[8] / n, dy = m[9] / n;
+  return [0, dy, dx, 0, 0, -dx, dy, 0, 1, 0, 0, 0, 0, 0, 0, 1]; // columns: the gripper's axis, pins x that, the pins
 }
 
 /** Which preset a TCP is, if any: to 0.1 mm and 0.01°, what the inspector's fields round to. */
@@ -191,7 +242,7 @@ export type MountShape =
 
 export interface ToolPlacement {
   length: number;    // the tool as drawn, back from its fingertips along its axis
-  tip: Vec3;         // its fingertips in the TCP's frame: the origin, unless extensions reach from them to the TCP
+  tip: Vec3;         // its fingertips in the TCP's frame: the origin, unless its pins reach from them to the TCP
   tilt: number;      // how far a tool that tilts on its own bracket is turned (its tilt joint's value), else 0
   mount: MountShape;
 }
@@ -226,13 +277,14 @@ export function placeTool(tcp: number[], tool: ToolModel, fingerAxis: 'x' | 'y' 
 
   // A gripper lying across the flange is on the bracket, its axis the bracket's depth from the flange.
   // With pin fingers, a TCP further out along the flange's axis than that is not a gripper hung lower:
-  // it is at the end of the pins. Without them the gripper is where its TCP says, on a longer bracket.
+  // it is where the pins grip: `drop` out along them, and in the middle of them, a little back from the
+  // fingertips. Without them the gripper is where its TCP says, on a longer bracket.
   const across = Math.abs(axis[2]) < 0.35;
-  const snug = BRACKET_90.depth;
-  const drop = tool.rods && across && at[2] > snug + 0.002 ? at[2] - snug : 0;
-  const tipAt: Vec3 = [at[0], at[1], at[2] - drop];
+  const drop = pinDrop(m, tool);
+  const ahead = drop && tool.rods ? pinMiddle(tool.rods) : 0;
+  const tipAt: Vec3 = [at[0] + axis[0] * ahead, at[1] + axis[1] * ahead, at[2] - drop + axis[2] * ahead];
   // the flange's axis as the TCP's frame sees it is the rotation's third row
-  const tip: Vec3 = drop ? [-drop * m[8] || 0, -drop * m[9] || 0, -drop * m[10] || 0] : [0, 0, 0];
+  const tip: Vec3 = drop ? [-drop * m[8] || 0, -drop * m[9] || 0, ahead - drop * m[10] || 0] : [0, 0, 0];
 
   const base: Vec3 = [tipAt[0] - axis[0] * length, tipAt[1] - axis[1] * length, tipAt[2] - axis[2] * length];
   const side = Math.hypot(base[0], base[1]);

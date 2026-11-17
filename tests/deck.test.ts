@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkProject } from '../src/lib/checks';
+import { checkProject, openRange } from '../src/lib/checks';
 import { CATALOG, approachMatrix, className, makeComponent, slotMatrix, slug, tiltFromSkill, type Project } from '../src/lib/deck';
 import { demoProject } from '../src/lib/demo';
 import { itemKind, placeholderRadius, plateTurn } from '../src/lib/items';
@@ -13,6 +13,8 @@ import { buildTrajectory } from '../src/lib/motion';
 import { parseScript } from '../src/lib/parser';
 import { plan, type Action, type ArmState } from '../src/lib/planner';
 import { exportDeck, safePointJoints } from '../src/lib/runtimeDeck';
+import { normalizeProject } from '../src/lib/storage';
+import { TOOLS, mountTcp } from '../src/lib/tools';
 
 const RUNTIME = readFileSync(new URL('../arm_loc_helper/runtime.py', import.meta.url), 'utf8');
 
@@ -20,16 +22,17 @@ describe('the deck model', () => {
   it('puts tray slots row by row along the turned component', () => {
     const p = demoProject();
     const tray = { ...p.components.find((c) => c.id === 'vial_tray')!, yaw: 90 };
-    const s5 = slotMatrix(tray, 5); // row 1, col 1
+    const s5 = slotMatrix(tray, 5, p); // row 1, col 1
     expect(s5[3]).toBeCloseTo(tray.x - tray.rowPitch, 9);
     expect(s5[7]).toBeCloseTo(tray.y + tray.colPitch, 9);
     expect(s5[10]).toBeCloseTo(-1, 9); // tool z straight down
-    expect(approachMatrix(tray, 5)[11]).toBeCloseTo(tray.z + tray.approach, 9);
+    expect(approachMatrix(tray, 5, p)[11]).toBeCloseTo(tray.z + tray.approach, 9);
   });
 
   it('loads a side rack along its insertion axis and backs out along it', () => {
-    const rack = demoProject().components.find((c) => c.id === 'slide_rack')!; // yaw 180: insertion along -x
-    const s = slotMatrix(rack, 2), a = approachMatrix(rack, 2);
+    const p = demoProject();
+    const rack = p.components.find((c) => c.id === 'slide_rack')!; // yaw 180: insertion along -x
+    const s = slotMatrix(rack, 2, p), a = approachMatrix(rack, 2, p);
     expect([s[2], s[6], s[10]].map((v) => +v.toFixed(9))).toEqual([-1, 0, 0]); // tool z along -x
     expect(s[11]).toBeCloseTo(rack.z + 2 * rack.rowPitch, 9); // levels go up
     expect(a[3] - s[3]).toBeCloseTo(rack.approach, 9); // out toward +x, at the same height
@@ -42,7 +45,7 @@ describe('the deck model', () => {
     for (const toolYaw of [0, 90, 25]) {
       const c = { ...nest, toolYaw };
       // the plate's long side, turned by plateTurn in the TCP's frame, in the base frame
-      const s = slotMatrix(c, 0), t = plateTurn(c);
+      const s = slotMatrix(c, 0, demoProject()), t = plateTurn(c);
       const long = [s[0] * Math.cos(t) + s[1] * Math.sin(t), s[4] * Math.cos(t) + s[5] * Math.sin(t)];
       // is the nest's own x: the long side of its block
       expect(long[0]).toBeCloseTo(Math.cos((35 * Math.PI) / 180), 9);
@@ -70,12 +73,52 @@ describe('checks', () => {
     expect(errors, errors.map((f) => f.title).join('\n')).toEqual([]);
   });
 
+  it('opens the gripper only as far as a location says, and says how far that should be', () => {
+    const p = demoProject();
+    const tray = p.components.find((c) => c.id === 'vial_tray')!;
+    expect(exportDeck(p).locations.vial_tray.open).toBe(60);
+    expect(exportDeck(p).locations.balance.open).toBe(100);
+    const steps = plan(exportDeck(p), 'transfer', { kind: 'safe', name: 'home' }, 'vial_tray', 0, 'balance', 0);
+    expect(steps.filter((s) => s.name === 'open').map((s) => s.percent)).toEqual([60, 100]);
+    // the fingers stop there in the preview too
+    const opened = buildTrajectory(p, steps, safePointJoints(p.safePoints[0], p)!).segments.filter((s) => s.step.name === 'open').map((s) => s.gripTo);
+    expect(opened).toEqual([0.6, 1]);
+
+    // fully open, a Hand-E's 50 mm reaches the vials 30 mm either side: midway between that and the vial is 60%
+    const { need, limit, stroke } = openRange(p, tray)!;
+    expect([need, limit, stroke].map((v) => +v!.toFixed(4))).toEqual([0.0216, 0.0384, 0.05]);
+    tray.openTo = 100;
+    const wide = checkProject(p).find((f) => f.target === 'vial_tray' && /into the next vial/.test(f.title))!;
+    expect(wide.fix!.label).toBe('Open to 60%');
+    expect(wide.fix!.apply(p).components.find((c) => c.id === 'vial_tray')!.openTo).toBe(60);
+    tray.openTo = 30; // 15 mm: less than the vial
+    expect(checkProject(p).find((f) => f.target === 'vial_tray' && /do not open enough/.test(f.title))!.fix!.label).toBe('Open to 60%');
+    tray.openTo = 60;
+    expect(checkProject(p).filter((f) => f.target === 'vial_tray')).toEqual([]);
+
+    // pin fingers reach further out than the fingers' faces: their pins are on the far side
+    p.gripper.model = 'hand_e_pins';
+    p.robot.tcp = mountTcp(TOOLS.hand_e_pins, 'right_angle');
+    const pins = openRange(p, tray)!;
+    expect(pins.limit!).toBeCloseTo(2 * (0.03 - 0.0108 - 0.007), 6);
+    expect(checkProject(p).find((f) => f.target === 'vial_tray' && /into the next vial/.test(f.title))!.fix!.label).toMatch(/^Open to \d+%$/);
+    // a tray with one row and the fingers along it has nothing in their way
+    expect(openRange({ ...p, gripper: { ...p.gripper, model: 'hand_e' }, robot: { ...p.robot, tcp: mountTcp(TOOLS.hand_e, 'straight') } }, { ...tray, cols: 1 })!.limit).toBeNull();
+
+    // a gripper on a digital output cannot do it, and an older save opens fully
+    p.gripper.type = 'digital_out';
+    expect(checkProject(p).some((f) => /only opens fully/.test(f.title))).toBe(true);
+    const old = JSON.parse(JSON.stringify(demoProject()));
+    for (const c of old.components) delete c.openTo;
+    expect(normalizeProject(old).components.every((c) => c.openTo === 100)).toBe(true);
+  });
+
   it('flags a tilted taught pose and snaps it back', () => {
     const p = demoProject();
     const tray = p.components[0];
     tray.taught = toAxisAngle(multiply(rotY(0.05), rotX(Math.PI))); // tool down, tipped 2.9 deg
     tray.taughtFrom = 'Waypoint_1';
-    expect(tiltFromSkill(tray)).toBeGreaterThan(2);
+    expect(tiltFromSkill(tray, p)).toBeGreaterThan(2);
     const f = checkProject(p).find((x) => x.target === 'vial_tray' && /off vertical/.test(x.title))!;
     expect(f.level).toBe('warning');
     const fixed = f.fix!.apply(p);
@@ -186,7 +229,7 @@ for c in json.loads(${JSON.stringify(JSON.stringify(cases))}):
     a = c["args"]
     out.append(arm.plan(c["action"], *a))
 print(json.dumps(out))`;
-    const fromPython = JSON.parse(run(py)) as { kind: string; name: string; target: number[] | null; slow: boolean }[][];
+    const fromPython = JSON.parse(run(py)) as { kind: string; name: string; target: number[] | null; slow: boolean; percent?: number }[][];
     const deck = exportDeck(p);
     cases.forEach((c, i) => {
       const from: ArmState = typeof c.from === 'string' ? { kind: 'safe', name: c.from } : { kind: 'loc', name: c.from[0], index: c.from[1], down: c.from[2] };
@@ -194,6 +237,7 @@ print(json.dumps(out))`;
       expect(fromPython[i].map((s) => `${s.kind} ${s.name}`), c.action).toEqual(ts.map((s) => `${s.kind} ${s.name}`));
       fromPython[i].forEach((s, k) => {
         expect(s.slow).toBe(ts[k].slow);
+        expect(s.percent).toBe(ts[k].percent); // how far the gripper opens, on its open steps
         if (s.target) s.target.forEach((v, j) => expect(v).toBeCloseTo(ts[k].target![j], 12));
       });
     });

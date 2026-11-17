@@ -12,6 +12,7 @@ export interface PlanStep {
   name: string;
   target: number[] | null;
   slow: boolean;
+  percent?: number;   // a gripper's open: how far, % of its stroke (the location's)
   after: ArmState;
 }
 
@@ -132,7 +133,9 @@ const into = (deck: RuntimeDeck, name: string, index: number): PlanStep =>
   ({ kind: 'movel', name: `${name}[${index}]`, target: slot(deck, name, index), slow: true, after: { kind: 'loc', name, index, down: true } });
 const out = (deck: RuntimeDeck, name: string, index: number): PlanStep =>
   ({ kind: 'movel', name: `${name}[${index}] approach`, target: approachPose(deck, name, index), slow: true, after: { kind: 'loc', name, index, down: false } });
-const grip = (open: boolean, after: ArmState): PlanStep => ({ kind: 'gripper', name: open ? 'open' : 'close', target: null, slow: false, after });
+const open = (deck: RuntimeDeck, name: string, after: ArmState): PlanStep =>
+  ({ kind: 'gripper', name: 'open', target: null, slow: false, percent: loc(deck, name).open ?? 100, after });
+const close = (after: ArmState): PlanStep => ({ kind: 'gripper', name: 'close', target: null, slow: false, after });
 
 export function plan(deck: RuntimeDeck, action: Action, state: ArmState, location?: string, index = 0,
   destination?: string, destinationIndex = 0): PlanStep[] {
@@ -152,11 +155,11 @@ export function plan(deck: RuntimeDeck, action: Action, state: ArmState, locatio
   if (action === 'move_to') return [...steps, into(deck, location, index)];
   if (action === 'pick') {
     const down = into(deck, location, index);
-    return [...steps, grip(true, here), down, grip(false, down.after), out(deck, location, index)];
+    return [...steps, open(deck, location, here), down, close(down.after), out(deck, location, index)];
   }
   if (action === 'place') {
     const down = into(deck, location, index);
-    return [...steps, down, grip(true, down.after), out(deck, location, index)];
+    return [...steps, down, open(deck, location, down.after), out(deck, location, index)];
   }
   throw new PlanError(`unknown action ${action}`);
 }

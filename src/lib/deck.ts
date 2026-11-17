@@ -9,10 +9,10 @@
 //   side_load the tool points horizontally along the component's insertion axis (+x of the
 //             component); approach straight back out along it (a slide or plate rack with rails
 //             parallel to the bench, an incubator hotel, a drawer)
-import { chain, fromAxisAngle, rotY, rotZ, toAxisAngle, translate, type Mat4, type Vec3 } from './mat4';
+import { chain, fromAxisAngle, invertRigid, multiply, rotY, rotZ, toAxisAngle, translate, type Mat4, type Vec3 } from './mat4';
 import type { Joints } from './kinematics';
 import type { RobotModelId } from './robots';
-import { TOOLS, mountTcp, type ToolId } from './tools';
+import { TOOLS, gripFrame, mountTcp, type ToolId } from './tools';
 
 export type ComponentKind = 'tray' | 'station' | 'side_rack' | 'block';
 export type Skill = 'top_down' | 'side_load';
@@ -36,6 +36,7 @@ export interface DeckComponent {
   taught?: Vec3;             // an orientation from the pendant (axis-angle, rad), kept for every slot
   taughtFrom?: string;       // the waypoint it came from
   color: string;
+  openTo: number;            // how far the gripper opens here, % of its stroke: before a pick, and to let go
   filled: boolean;           // slots hold an item at the start of a motion preview
 }
 
@@ -118,27 +119,27 @@ export const CATALOG: CatalogEntry[] = [
   {
     key: 'vial_tray', label: 'Vial tray', hint: 'A flat grid, rows × columns, picked from above.',
     make: () => ({ label: 'Vial tray', kind: 'tray', yaw: 0, rows: 2, cols: 4, colPitch: 0.03, rowPitch: 0.03, approach: 0.08,
-      toolYaw: 0, size: [0.15, 0.09, 0.04], gripHeight: 0.03, color: '#64748b', filled: true, z: 0.07 }),
+      toolYaw: 0, size: [0.15, 0.09, 0.04], gripHeight: 0.03, openTo: 100, color: '#64748b', filled: true, z: 0.07 }),
   },
   {
     key: 'well_plate', label: 'Well plate', hint: 'One SBS plate position, gripped on the long sides.',
     make: () => ({ label: 'Plate nest', kind: 'station', yaw: 0, rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, approach: 0.06,
-      toolYaw: 90, size: [0.1278, 0.0855, 0.02], gripHeight: 0.008, color: '#0ea5e9', filled: true, z: 0.028 }),
+      toolYaw: 90, size: [0.1278, 0.0855, 0.02], gripHeight: 0.008, openTo: 100, color: '#0ea5e9', filled: true, z: 0.028 }),
   },
   {
     key: 'station', label: 'Station', hint: 'One position reached from above: a balance, capper or stirrer.',
     make: () => ({ label: 'Balance', kind: 'station', yaw: 0, rows: 1, cols: 1, colPitch: 0.03, rowPitch: 0.03, approach: 0.1,
-      toolYaw: 0, size: [0.2, 0.3, 0.1], gripHeight: 0.03, color: '#a16207', filled: false, z: 0.13 }),
+      toolYaw: 0, size: [0.2, 0.3, 0.1], gripHeight: 0.03, openTo: 100, color: '#a16207', filled: false, z: 0.13 }),
   },
   {
     key: 'side_rack', label: 'Side rack', hint: 'A vertical grid, rows × columns, loaded sideways from the side it faces.',
     make: () => ({ label: 'Side rack', kind: 'side_rack', yaw: 0, rows: 3, cols: 2, colPitch: 0.04, rowPitch: 0.04, approach: 0.1,
-      toolYaw: 0, size: [0.06, 0.06, 0.12], gripHeight: 0.02, color: '#7c3aed', filled: true, z: 0.05 }),
+      toolYaw: 0, size: [0.06, 0.06, 0.12], gripHeight: 0.02, openTo: 100, color: '#7c3aed', filled: true, z: 0.05 }),
   },
   {
     key: 'block', label: 'Instrument', hint: 'A box the arm must keep clear of. No slots.',
     make: () => ({ label: 'Instrument', kind: 'block', yaw: 0, rows: 1, cols: 1, colPitch: 0, rowPitch: 0, approach: 0,
-      toolYaw: 0, size: [0.3, 0.3, 0.35], gripHeight: 0, color: '#475569', filled: false, z: 0 }),
+      toolYaw: 0, size: [0.3, 0.3, 0.35], gripHeight: 0, openTo: 100, color: '#475569', filled: false, z: 0 }),
   },
 ];
 
@@ -180,7 +181,13 @@ export function slotOffset(c: DeckComponent, i: number): Vec3 {
   return [col * c.colPitch, row * c.rowPitch, 0];
 }
 
-/** The ideal TCP orientation for the component's skill. */
+/** The frame the deck's tool grips in, as seen from its TCP (see gripFrame): the identity, but for pin fingers. */
+export const gripOf = (p: Project): Mat4 => gripFrame(p.robot.tcp, TOOLS[p.gripper.model]);
+
+/** A TCP pose's grip frame: what the tool holds, and which way it goes into it. */
+export const gripPose = (tcp: Mat4, p: Project): Mat4 => multiply(tcp, gripOf(p));
+
+/** The ideal orientation of the tool's grip frame for the component's skill. */
 export function skillRotation(c: DeckComponent): Mat4 {
   if (skillOf(c) === 'side_load') {
     // tool z along the insertion axis (+x of the component), tool x pointing down at toolYaw 0
@@ -189,15 +196,16 @@ export function skillRotation(c: DeckComponent): Mat4 {
   return chain(rotZ(deg(c.yaw + c.toolYaw)), [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1]); // rotX(pi)
 }
 
-export function slotRotation(c: DeckComponent): Mat4 {
-  return c.taught ? fromAxisAngle(...c.taught) : skillRotation(c);
+/** The TCP's orientation at the component's slots: the taught one, or the one that grips as its skill says. */
+export function slotRotation(c: DeckComponent, p: Project): Mat4 {
+  return c.taught ? fromAxisAngle(...c.taught) : multiply(skillRotation(c), invertRigid(gripOf(p)));
 }
 
 /** The TCP pose (matrix) at slot `i`. */
-export function slotMatrix(c: DeckComponent, i: number): Mat4 {
+export function slotMatrix(c: DeckComponent, i: number, p: Project): Mat4 {
   const [ox, oy, oz] = slotOffset(c, i);
   const a = deg(c.yaw), ca = Math.cos(a), sa = Math.sin(a);
-  const m = slotRotation(c);
+  const m = slotRotation(c, p);
   m[3] = c.x + ca * ox - sa * oy;
   m[7] = c.y + sa * ox + ca * oy;
   m[11] = c.z + oz;
@@ -213,8 +221,8 @@ export function approachVector(c: DeckComponent): Vec3 {
   return [0, 0, c.approach];
 }
 
-export function approachMatrix(c: DeckComponent, i: number): Mat4 {
-  const m = slotMatrix(c, i);
+export function approachMatrix(c: DeckComponent, i: number, p: Project): Mat4 {
+  const m = slotMatrix(c, i, p);
   const v = approachVector(c);
   m[3] += v[0];
   m[7] += v[1];
@@ -223,15 +231,15 @@ export function approachMatrix(c: DeckComponent, i: number): Mat4 {
 }
 
 /** Degrees between the taught orientation and the skill's ideal one (0 when not taught). */
-export function tiltFromSkill(c: DeckComponent): number {
+export function tiltFromSkill(c: DeckComponent, p: Project): number {
   if (!c.taught) return 0;
-  const a = fromAxisAngle(...c.taught), b = skillRotation(c);
-  // compare the tool axes: what matters for the grip is where the tool points
+  const a = gripPose(fromAxisAngle(...c.taught), p), b = skillRotation(c);
+  // compare the axes the tool grips along: what matters is which way it goes into the item
   const dot = a[2] * b[2] + a[6] * b[6] + a[10] * b[10];
   return (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
 }
 
-/** The yaw (deg) that lines a component up with a taught tool orientation. */
+/** The yaw (deg) that lines a component up with a taught orientation of the tool's grip frame. */
 export function yawFromOrientation(kind: ComponentKind, rotation: Mat4, toolYaw: number): number {
   if (SKILL[kind] === 'side_load') {
     // the insertion axis is the tool z, flattened onto the bench
@@ -241,8 +249,9 @@ export function yawFromOrientation(kind: ComponentKind, rotation: Mat4, toolYaw:
   return (Math.atan2(rotation[4], rotation[0]) * 180) / Math.PI - toolYaw;
 }
 
-export function safePointMatrix(s: SafePointDef): Mat4 {
-  return chain(translate(s.x, s.y, s.z), rotZ(deg(s.heading)), [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1]);
+/** The TCP at a safe point that was not taught: the tool gripping straight down, as over a tray. */
+export function safePointMatrix(s: SafePointDef, p: Project): Mat4 {
+  return chain(translate(s.x, s.y, s.z), rotZ(deg(s.heading)), [1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1], invertRigid(gripOf(p)));
 }
 
 /** A matrix as a URScript pose [x, y, z, rx, ry, rz]. */

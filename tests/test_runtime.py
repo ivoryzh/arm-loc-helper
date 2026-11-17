@@ -154,6 +154,44 @@ def test_a_failed_move_leaves_the_position_unknown():
     assert arm.where() == "unknown"
 
 
+def test_a_location_says_how_far_the_gripper_opens():
+    d = deck()
+    d["locations"]["tray"]["open"] = 60
+    opened = []
+
+    class PartWay:
+        def open(self):
+            opened.append(100)
+
+        def open_to(self, percent):
+            opened.append(percent)
+
+        def close(self):
+            return True
+
+    arm = ArmController(d, gripper=PartWay(), echo=None)
+    assert [s["percent"] for s in arm.plan("transfer", "tray", 0, "rack", 0) if s["name"] == "open"] == [60, 100]
+    arm.transfer("tray", "rack")
+    assert opened == [60, 100]          # part-way over the tray, fully at the rack
+    arm.pick("tray", 1)
+    arm.place("tray", 0)
+    assert opened[2:] == [60, 60]       # and to let go in the tray, no wider than that either
+
+    class OnOff:                        # a gripper that cannot open part-way opens fully
+        def open(self):
+            opened.append("fully")
+
+        def close(self):
+            return True
+
+    ArmController(d, gripper=OnOff(), echo=None).pick("tray", 0)
+    assert opened[-1] == "fully"
+
+    d["locations"]["tray"]["open"] = 140
+    with pytest.raises(ValueError, match="tray.open is a percentage"):
+        ArmController(d, echo=None)
+
+
 def test_a_grip_on_nothing_is_reported():
     class Empty:
         def open(self):
@@ -305,6 +343,9 @@ def test_robotiq_gripper_activates_and_reports_a_grip(object_on_close):
     g = RobotiqGripper("127.0.0.1", port=port, timeout=2)
     assert "SET ACT 1" in log
     g.open()
+    assert "SET POS 0 SPE 255 FOR 100 GTO 1" in log
+    g.open_to(60)                       # 60% open: 40% of the way from open (0) to closed (255)
+    assert "SET POS 102 SPE 255 FOR 100 GTO 1" in log
     assert g.close() is object_on_close
     assert "SET POS 255 SPE 255 FOR 100 GTO 1" in log
     g.disconnect()

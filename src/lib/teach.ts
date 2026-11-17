@@ -2,7 +2,7 @@
 // slot 0 is the taught point, keeping the taught orientation until it is snapped to the skill's, and
 // safe points that keep the taught joints exactly.
 import {
-  CATALOG, SKILL, allIds, makeComponent, slug, uniqueId, yawFromOrientation,
+  CATALOG, SKILL, allIds, gripPose, makeComponent, slug, uniqueId, yawFromOrientation,
   type DeckComponent, type Project, type SafePointDef, type Waypoint,
 } from './deck';
 import { fk, type Joints } from './kinematics';
@@ -20,7 +20,7 @@ export function waypointMatrix(w: Waypoint, p: Project): Mat4 {
 export function anchorTo(c: DeckComponent, w: Waypoint, p: Project): DeckComponent {
   const m = waypointMatrix(w, p);
   if (!SKILL[c.kind]) return { ...c, x: m[3], y: m[7] };
-  const yaw = yawFromOrientation(c.kind, m, c.toolYaw);
+  const yaw = yawFromOrientation(c.kind, gripPose(m, p), c.toolYaw);
   return { ...c, x: m[3], y: m[7], z: m[11], yaw: Math.round(yaw * 1000) / 1000, taught: toAxisAngle(m), taughtFrom: w.name };
 }
 
@@ -33,12 +33,12 @@ export function componentFromWaypoint(catalogKey: string, w: Waypoint, p: Projec
 }
 
 export function safePointFromWaypoint(w: Waypoint, p: Project): SafePointDef {
-  const m = waypointMatrix(w, p);
+  const m = waypointMatrix(w, p), g = gripPose(m, p);
   return {
     id: uniqueId(slug(w.name), allIds(p)),
     label: w.name.replace(/_/g, ' '),
     x: m[3], y: m[7], z: m[11],
-    heading: (Math.atan2(m[4], m[0]) * 180) / Math.PI,
+    heading: (Math.atan2(g[4], g[0]) * 180) / Math.PI,
     q: w.q ? ([...w.q] as Joints) : undefined,
     taughtFrom: w.name,
     links: p.safePoints.map((s) => s.id),
